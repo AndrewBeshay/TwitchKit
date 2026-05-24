@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Swift test
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_26.5.0.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.5.0.app/Contents/Developer
+          elif [ -d /Applications/Xcode.app ]; then
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+
+      - name: Print tool versions
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          swift --version
+
+      - name: Build and test
+        run: swift test

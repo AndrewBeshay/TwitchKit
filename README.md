@@ -1,5 +1,7 @@
 # TwitchKit
 
+[![CI](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml/badge.svg)](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml)
+
 TwitchKit is a Swift Package for working with the Twitch Helix API and EventSub WebSocket transport from modern Swift apps.
 
 The package is currently in early development. It focuses on a small, typed foundation for authentication, Helix requests, Twitch chat-related models, and EventSub event delivery.
