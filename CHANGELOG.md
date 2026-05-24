@@ -1,0 +1,54 @@
+# Changelog
+
+All notable changes to TwitchKit will be documented in this file.
+
+TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
+
+## [0.1.0-alpha.1] - 2026-05-25
+
+### Added
+
+- Initial Swift Package for Twitch Helix API and EventSub WebSocket support.
+- `TwitchClient` facade that exposes authentication, Helix API, and EventSub clients.
+- OAuth helpers for:
+  - OAuth implicit grant
+  - OAuth authorization code grant
+  - OIDC implicit grant
+  - OIDC authorization code grant
+  - OAuth client credentials grant
+  - OAuth device code grant
+  - External token injection
+- `TwitchScope` catalog covering Twitch API, EventSub, IRC chat, and PubSub-specific chat scopes.
+- Keychain-backed token storage with client/account namespacing.
+- Helix helpers for:
+  - Authenticated user profile
+  - Stream key
+  - Channel information
+  - Channel updates
+  - Global and channel emotes
+  - Global and channel badges
+  - Chat message sending
+  - EventSub subscription creation
+- EventSub WebSocket client with:
+  - Async event stream
+  - Welcome timeout
+  - Keepalive timeout handling
+  - Reconnect handling
+  - Automatic resubscription after full reconnect
+  - Duplicate message filtering
+  - Revocation events
+- Typed models for selected Twitch API and EventSub payloads.
+- Forward-compatible enums for selected Twitch string domains:
+  - `ChatMessageType`
+  - `ChatFragmentType`
+  - `SubscriptionTier`
+  - `BadgeClickAction`
+- `ChannelInfoUpdate` request type for channel updates.
+- Model decoding and API design tests.
+- GitHub Actions CI workflow running `swift test`.
+
+### Notes
+
+- This is an alpha prerelease. Public APIs may change before `1.0.0`.
+- The package currently targets Swift 6.2, iOS 26, and macOS 15.
+- TwitchKit currently covers a focused subset of Helix and EventSub. More endpoints and typed EventSub subscriptions are planned.
