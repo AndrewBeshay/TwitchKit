@@ -1,0 +1,445 @@
+import XCTest
+import Foundation
+@testable import TwitchKit
+
+/// Tests that TwitchKit models correctly decode real Twitch API JSON responses.
+/// These tests use JSON payloads matching the actual Twitch Helix and EventSub formats
+/// to catch any Codable mismatches before they hit production.
+final class ModelDecodingTests: XCTestCase {
+
+    // MARK: - TwitchUser
+
+    func test_decodeTwitchUser() throws {
+        let json = """
+        {
+            "id": "141981764",
+            "login": "twitchdev",
+            "display_name": "TwitchDev",
+            "profile_image_url": "https://static-cdn.jtvnw.net/jtv_user_pictures/profile.png",
+            "email": "not-real@example.com",
+            "broadcaster_type": "partner",
+            "description": "Twitch developer account",
+            "offline_image_url": "https://static-cdn.jtvnw.net/jtv_user_pictures/offline.png",
+            "created_at": "2021-07-30T20:32:28Z"
+        }
+        """.data(using: .utf8)!
+
+        let user = try JSONDecoder.twitch().decode(TwitchUser.self, from: json)
+
+        XCTAssertEqual(user.id, "141981764")
+        XCTAssertEqual(user.login, "twitchdev")
+        XCTAssertEqual(user.displayName, "TwitchDev")
+        XCTAssertEqual(user.email, "not-real@example.com")
+        XCTAssertEqual(user.broadcasterType, "partner")
+        XCTAssertEqual(user.description, "Twitch developer account")
+    }
+
+    func test_decodeTwitchUserMinimal() throws {
+        let json = """
+        {
+            "id": "12345",
+            "login": "testuser",
+            "display_name": "TestUser",
+            "profile_image_url": "https://example.com/img.png",
+            "broadcaster_type": ""
+        }
+        """.data(using: .utf8)!
+
+        let user = try JSONDecoder.twitch().decode(TwitchUser.self, from: json)
+
+        XCTAssertEqual(user.id, "12345")
+        XCTAssertEqual(user.email, nil)
+        XCTAssertEqual(user.description, nil)
+        XCTAssertEqual(user.broadcasterType, "")
+    }
+
+    // MARK: - TwitchChannel
+
+    func test_decodeTwitchChannel() throws {
+        let json = """
+        {
+            "broadcaster_id": "141981764",
+            "broadcaster_login": "twitchdev",
+            "broadcaster_name": "TwitchDev",
+            "title": "Building cool stuff",
+            "game_name": "Science & Technology",
+            "game_id": "509670",
+            "tags": ["English", "Programming"],
+            "broadcaster_language": "en",
+            "delay": 0,
+            "is_branded_content": false
+        }
+        """.data(using: .utf8)!
+
+        let channel = try JSONDecoder.twitch().decode(TwitchChannel.self, from: json)
+
+        XCTAssertEqual(channel.broadcasterId, "141981764")
+        XCTAssertEqual(channel.title, "Building cool stuff")
+        XCTAssertEqual(channel.gameName, "Science & Technology")
+        XCTAssertEqual(channel.tags, ["English", "Programming"])
+        XCTAssertEqual(channel.delay, 0)
+    }
+
+    // MARK: - ChatMessage
+
+    func test_decodeChatMessage() throws {
+        let json = """
+        {
+            "broadcaster_user_id": "1971641",
+            "broadcaster_user_login": "streamer",
+            "broadcaster_user_name": "streamer",
+            "chatter_user_id": "4145994",
+            "chatter_user_login": "viewer32",
+            "chatter_user_name": "viewer32",
+            "message_id": "cc106a89-1814-919d-454c-f4f2f970aae7",
+            "message": {
+                "text": "Hi chat",
+                "fragments": [
+                    {
+                        "type": "text",
+                        "text": "Hi chat",
+                        "cheermote": null,
+                        "emote": null,
+                        "mention": null
+                    }
+                ]
+            },
+            "color": "#00FF7F",
+            "badges": [
+                {
+                    "set_id": "moderator",
+                    "id": "1",
+                    "info": ""
+                },
+                {
+                    "set_id": "subscriber",
+                    "id": "12",
+                    "info": "16"
+                }
+            ],
+            "message_type": "text",
+            "cheer": null,
+            "reply": null,
+            "channel_points_custom_reward_id": null,
+            "source_broadcaster_user_id": null,
+            "source_broadcaster_user_login": null,
+            "source_broadcaster_user_name": null,
+            "source_message_id": null,
+            "source_badges": null
+        }
+        """.data(using: .utf8)!
+
+        let msg = try JSONDecoder.twitch().decode(ChatMessage.self, from: json)
+
+        XCTAssertEqual(msg.messageId, "cc106a89-1814-919d-454c-f4f2f970aae7")
+        XCTAssertEqual(msg.id, msg.messageId)
+        XCTAssertEqual(msg.broadcasterUserId, "1971641")
+        XCTAssertEqual(msg.chatterUserLogin, "viewer32")
+        XCTAssertEqual(msg.message.text, "Hi chat")
+        XCTAssertEqual(msg.message.fragments.count, 1)
+        XCTAssertEqual(msg.message.fragments[0].type, "text")
+        XCTAssertEqual(msg.color, "#00FF7F")
+        XCTAssertEqual(msg.badges.count, 2)
+        XCTAssertEqual(msg.badges[0].setId, "moderator")
+        XCTAssertEqual(msg.badges[1].info, "16")
+        XCTAssertEqual(msg.messageType, "text")
+        XCTAssertEqual(msg.cheer, nil)
+        XCTAssertEqual(msg.reply, nil)
+        XCTAssertEqual(msg.sourceBroadcasterUserId, nil)
+    }
+
+    func test_decodeChatMessageWithCheer() throws {
+        let json = """
+        {
+            "broadcaster_user_id": "1971641",
+            "broadcaster_user_login": "streamer",
+            "broadcaster_user_name": "streamer",
+            "chatter_user_id": "4145994",
+            "chatter_user_login": "viewer32",
+            "chatter_user_name": "viewer32",
+            "message_id": "abc-123",
+            "message": {
+                "text": "Cheer100 nice!",
+                "fragments": [
+                    {
+                        "type": "cheermote",
+                        "text": "Cheer100",
+                        "cheermote": { "prefix": "Cheer", "bits": 100, "tier": 1 },
+                        "emote": null,
+                        "mention": null
+                    },
+                    {
+                        "type": "text",
+                        "text": " nice!",
+                        "cheermote": null,
+                        "emote": null,
+                        "mention": null
+                    }
+                ]
+            },
+            "color": "#FF0000",
+            "badges": [],
+            "message_type": "text",
+            "cheer": { "bits": 100 },
+            "reply": null,
+            "channel_points_custom_reward_id": null,
+            "source_broadcaster_user_id": null,
+            "source_broadcaster_user_login": null,
+            "source_broadcaster_user_name": null,
+            "source_message_id": null,
+            "source_badges": null
+        }
+        """.data(using: .utf8)!
+
+        let msg = try JSONDecoder.twitch().decode(ChatMessage.self, from: json)
+
+        XCTAssertEqual(msg.cheer?.bits, 100)
+        XCTAssertEqual(msg.message.fragments[0].cheermote?.prefix, "Cheer")
+        XCTAssertEqual(msg.message.fragments[0].cheermote?.bits, 100)
+    }
+
+    func test_decodeChatMessageSharedChat() throws {
+        let json = """
+        {
+            "broadcaster_user_id": "1971641",
+            "broadcaster_user_login": "streamer",
+            "broadcaster_user_name": "streamer",
+            "chatter_user_id": "4145994",
+            "chatter_user_login": "viewer32",
+            "chatter_user_name": "viewer32",
+            "message_id": "shared-123",
+            "message": { "text": "From another channel!", "fragments": [] },
+            "color": "#FFFFFF",
+            "badges": [],
+            "message_type": "text",
+            "cheer": null,
+            "reply": null,
+            "channel_points_custom_reward_id": null,
+            "source_broadcaster_user_id": "9999999",
+            "source_broadcaster_user_login": "otherchannel",
+            "source_broadcaster_user_name": "OtherChannel",
+            "source_message_id": "original-456",
+            "source_badges": [{ "set_id": "subscriber", "id": "1", "info": "3" }]
+        }
+        """.data(using: .utf8)!
+
+        let msg = try JSONDecoder.twitch().decode(ChatMessage.self, from: json)
+
+        XCTAssertEqual(msg.sourceBroadcasterUserId, "9999999")
+        XCTAssertEqual(msg.sourceBroadcasterUserLogin, "otherchannel")
+        XCTAssertEqual(msg.sourceMessageId, "original-456")
+        XCTAssertEqual(msg.sourceBadges?.count, 1)
+        XCTAssertEqual(msg.sourceBadges?[0].setId, "subscriber")
+    }
+
+    // MARK: - TwitchEmote
+
+    func test_decodeGlobalEmote() throws {
+        let json = """
+        {
+            "id": "25",
+            "name": "Kappa",
+            "images": {
+                "url_1x": "https://static-cdn.jtvnw.net/emoticons/v2/25/static/light/1.0",
+                "url_2x": "https://static-cdn.jtvnw.net/emoticons/v2/25/static/light/2.0",
+                "url_4x": "https://static-cdn.jtvnw.net/emoticons/v2/25/static/light/3.0"
+            },
+            "format": ["static"],
+            "scale": ["1.0", "2.0", "3.0"],
+            "theme_mode": ["light", "dark"],
+            "template": "https://static-cdn.jtvnw.net/emoticons/v2/{{id}}/{{format}}/{{theme_mode}}/{{scale}}"
+        }
+        """.data(using: .utf8)!
+
+        let emote = try JSONDecoder.twitch().decode(TwitchEmote.self, from: json)
+
+        XCTAssertEqual(emote.id, "25")
+        XCTAssertEqual(emote.name, "Kappa")
+        XCTAssertEqual(emote.format, ["static"])
+        XCTAssertEqual(emote.tier, nil)
+        XCTAssertEqual(emote.emoteType, nil)
+    }
+
+    func test_decodeChannelEmote() throws {
+        let json = """
+        {
+            "id": "304456832",
+            "name": "twitchdevPitchfork",
+            "images": {
+                "url_1x": "https://static-cdn.jtvnw.net/emoticons/v2/304456832/static/light/1.0",
+                "url_2x": "https://static-cdn.jtvnw.net/emoticons/v2/304456832/static/light/2.0",
+                "url_4x": "https://static-cdn.jtvnw.net/emoticons/v2/304456832/static/light/3.0"
+            },
+            "tier": "1000",
+            "emote_type": "subscriptions",
+            "emote_set_id": "301590448",
+            "format": ["static", "animated"],
+            "scale": ["1.0", "2.0", "3.0"],
+            "theme_mode": ["light", "dark"]
+        }
+        """.data(using: .utf8)!
+
+        let emote = try JSONDecoder.twitch().decode(TwitchEmote.self, from: json)
+
+        XCTAssertEqual(emote.tier, "1000")
+        XCTAssertEqual(emote.emoteType, "subscriptions")
+        XCTAssertEqual(emote.emoteSetId, "301590448")
+        XCTAssertTrue(emote.format.contains("animated"))
+        XCTAssertNil(emote.template)
+    }
+
+    func test_emoteImageURL() throws {
+        let emote = TwitchEmote(
+            id: "25", name: "Kappa", images: nil,
+            format: ["static"], scale: ["3.0"], themeMode: ["dark"],
+            template: "https://static-cdn.jtvnw.net/emoticons/v2/{{id}}/{{format}}/{{theme_mode}}/{{scale}}",
+            tier: nil, emoteType: nil, emoteSetId: nil
+        )
+
+        let url = try XCTUnwrap(emote.imageURL(format: "static", theme: "dark", scale: "3.0"))
+        XCTAssertEqual(url.absoluteString, "https://static-cdn.jtvnw.net/emoticons/v2/25/static/dark/3.0")
+    }
+
+    func test_emoteImageURLFallback() throws {
+        let emote = TwitchEmote(
+            id: "304456832", name: "test", images: nil,
+            format: ["static"], scale: ["1.0"], themeMode: ["dark"],
+            template: nil, tier: nil, emoteType: nil, emoteSetId: nil
+        )
+
+        let url = try XCTUnwrap(emote.imageURL(format: "animated", theme: "light", scale: "2.0"))
+        XCTAssertEqual(url.absoluteString, "https://static-cdn.jtvnw.net/emoticons/v2/304456832/animated/light/2.0")
+    }
+
+    // MARK: - TwitchBadgeSet
+
+    func test_decodeBadgeSet() throws {
+        let json = """
+        {
+            "set_id": "subscriber",
+            "versions": [
+                {
+                    "id": "0",
+                    "image_url_1x": "https://static-cdn.jtvnw.net/badges/sub/0/1",
+                    "image_url_2x": "https://static-cdn.jtvnw.net/badges/sub/0/2",
+                    "image_url_4x": "https://static-cdn.jtvnw.net/badges/sub/0/4",
+                    "title": "Subscriber",
+                    "description": "Subscriber",
+                    "click_action": "subscribe_to_channel",
+                    "click_url": null
+                },
+                {
+                    "id": "12",
+                    "image_url_1x": "https://static-cdn.jtvnw.net/badges/sub/12/1",
+                    "image_url_2x": "https://static-cdn.jtvnw.net/badges/sub/12/2",
+                    "image_url_4x": "https://static-cdn.jtvnw.net/badges/sub/12/4",
+                    "title": "12-Month Subscriber",
+                    "description": "12-Month Subscriber",
+                    "click_action": "subscribe_to_channel",
+                    "click_url": null
+                }
+            ]
+        }
+        """.data(using: .utf8)!
+
+        let badgeSet = try JSONDecoder.twitch().decode(TwitchBadgeSet.self, from: json)
+
+        XCTAssertEqual(badgeSet.setId, "subscriber")
+        XCTAssertEqual(badgeSet.versions.count, 2)
+        XCTAssertEqual(badgeSet.versions[0].id, "0")
+        XCTAssertEqual(badgeSet.versions[0].title, "Subscriber")
+        XCTAssertEqual(badgeSet.versions[1].id, "12")
+        XCTAssertEqual(badgeSet.versions[1].clickAction, "subscribe_to_channel")
+        XCTAssertEqual(badgeSet.versions[1].clickUrl, nil)
+    }
+
+    // MARK: - TwitchFollow
+
+    func test_decodeTwitchFollow() throws {
+        let json = """
+        {
+            "user_id": "1234",
+            "user_login": "newviewer",
+            "user_name": "NewViewer",
+            "followed_at": "2023-11-06T18:11:47Z"
+        }
+        """.data(using: .utf8)!
+
+        let follow = try JSONDecoder.twitch().decode(TwitchFollow.self, from: json)
+
+        XCTAssertEqual(follow.userId, "1234")
+        XCTAssertEqual(follow.userName, "NewViewer")
+        XCTAssertEqual(follow.followedAt, try XCTUnwrap(TwitchDateParser.date(from: "2023-11-06T18:11:47Z")))
+    }
+
+    // MARK: - TwitchSubscription
+
+    func test_decodeTwitchSubscription() throws {
+        let json = """
+        {
+            "user_id": "5678",
+            "user_login": "subscrber",
+            "user_name": "Subscrber",
+            "tier": "1000",
+            "is_gift": false
+        }
+        """.data(using: .utf8)!
+
+        let sub = try JSONDecoder.twitch().decode(TwitchSubscription.self, from: json)
+
+        XCTAssertEqual(sub.userId, "5678")
+        XCTAssertEqual(sub.tier, "1000")
+        XCTAssertEqual(sub.isGift, false)
+    }
+
+    func test_decodeGiftedSubscription() throws {
+        let json = """
+        {
+            "user_id": "9999",
+            "user_name": "LuckyViewer",
+            "tier": "2000",
+            "is_gift": true
+        }
+        """.data(using: .utf8)!
+
+        let sub = try JSONDecoder.twitch().decode(TwitchSubscription.self, from: json)
+
+        XCTAssertEqual(sub.tier, "2000")
+        XCTAssertEqual(sub.isGift, true)
+    }
+
+    // MARK: - HelixResponse
+
+    func test_decodeHelixResponse() throws {
+        let json = """
+        {
+            "data": [
+                { "id": "1", "login": "user1", "display_name": "User1", "profile_image_url": "", "broadcaster_type": "" },
+                { "id": "2", "login": "user2", "display_name": "User2", "profile_image_url": "", "broadcaster_type": "" }
+            ],
+            "pagination": { "cursor": "abc123" }
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder.twitch().decode(HelixResponse<TwitchUser>.self, from: json)
+
+        XCTAssertEqual(response.data.count, 2)
+        XCTAssertEqual(response.data[0].login, "user1")
+        XCTAssertEqual(response.pagination?.cursor, "abc123")
+    }
+
+    func test_decodeHelixResponseNoPagination() throws {
+        let json = """
+        {
+            "data": [
+                { "id": "1", "login": "user1", "display_name": "User1", "profile_image_url": "", "broadcaster_type": "" }
+            ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder.twitch().decode(HelixResponse<TwitchUser>.self, from: json)
+
+        XCTAssertEqual(response.data.count, 1)
+        XCTAssertNil(response.pagination)
+    }
+}
