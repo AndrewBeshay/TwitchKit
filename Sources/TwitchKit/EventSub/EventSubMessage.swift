@@ -21,7 +21,7 @@ public struct EventSubSubscription: Sendable, Hashable {
         self.condition = condition
     }
 
-    public static func channelChatMessage(broadcasterID: String, userID: String) -> Self {
+    public static func makeChannelChatMessage(broadcasterID: String, userID: String) -> Self {
         Self(
             type: "channel.chat.message",
             version: "1",
@@ -29,7 +29,7 @@ public struct EventSubSubscription: Sendable, Hashable {
         )
     }
 
-    public static func channelFollow(broadcasterID: String, moderatorID: String) -> Self {
+    public static func makeChannelFollow(broadcasterID: String, moderatorID: String) -> Self {
         Self(
             type: "channel.follow",
             version: "2",
@@ -37,12 +37,27 @@ public struct EventSubSubscription: Sendable, Hashable {
         )
     }
 
-    public static func channelSubscribe(broadcasterID: String) -> Self {
+    public static func makeChannelSubscribe(broadcasterID: String) -> Self {
         Self(
             type: "channel.subscribe",
             version: "1",
             condition: ["broadcaster_user_id": broadcasterID]
         )
+    }
+
+    @available(*, deprecated, renamed: "makeChannelChatMessage(broadcasterID:userID:)")
+    public static func channelChatMessage(broadcasterID: String, userID: String) -> Self {
+        makeChannelChatMessage(broadcasterID: broadcasterID, userID: userID)
+    }
+
+    @available(*, deprecated, renamed: "makeChannelFollow(broadcasterID:moderatorID:)")
+    public static func channelFollow(broadcasterID: String, moderatorID: String) -> Self {
+        makeChannelFollow(broadcasterID: broadcasterID, moderatorID: moderatorID)
+    }
+
+    @available(*, deprecated, renamed: "makeChannelSubscribe(broadcasterID:)")
+    public static func channelSubscribe(broadcasterID: String) -> Self {
+        makeChannelSubscribe(broadcasterID: broadcasterID)
     }
 }
 

@@ -184,26 +184,8 @@ public struct HelixClient: Sendable {
     ///   `HelixError.forbidden` for age/region-restricted CCL changes.
     ///
     /// - SeeAlso: [Modify Channel Information](https://dev.twitch.tv/docs/api/reference/#modify-channel-information)
-    public func updateChannelInfo(
-        broadcasterId: String,
-        title: String? = nil,
-        gameId: String? = nil,
-        broadcasterLanguage: String? = nil,
-        delay: Int? = nil,
-        tags: [String]? = nil,
-        contentClassificationLabels: [ContentClassificationLabel]? = nil,
-        isBrandedContent: Bool? = nil
-    ) async throws {
-        let requestBody = UpdateChannelInfoRequest(
-            title: title,
-            gameId: gameId,
-            broadcasterLanguage: broadcasterLanguage,
-            delay: delay,
-            tags: tags,
-            contentClassificationLabels: contentClassificationLabels,
-            isBrandedContent: isBrandedContent
-        )
-        let bodyData = try JSONEncoder.twitch().encode(requestBody)
+    public func updateChannelInfo(forBroadcasterID broadcasterId: String, with update: ChannelInfoUpdate) async throws {
+        let bodyData = try JSONEncoder.twitch().encode(update)
 
         // PATCH /channels returns 204 No Content — handle directly, not via generic request
         var components = URLComponents(string: Self.baseURL + "channels")!
@@ -237,6 +219,29 @@ public struct HelixClient: Sendable {
         default:
             throw HelixError.serverError(status: http.statusCode)
         }
+    }
+
+    @available(*, deprecated, renamed: "updateChannelInfo(forBroadcasterID:with:)")
+    public func updateChannelInfo(
+        broadcasterId: String,
+        title: String? = nil,
+        gameId: String? = nil,
+        broadcasterLanguage: String? = nil,
+        delay: Int? = nil,
+        tags: [String]? = nil,
+        contentClassificationLabels: [ContentClassificationLabel]? = nil,
+        isBrandedContent: Bool? = nil
+    ) async throws {
+        let update = ChannelInfoUpdate(
+            title: title,
+            gameId: gameId,
+            broadcasterLanguage: broadcasterLanguage,
+            delay: delay,
+            tags: tags,
+            contentClassificationLabels: contentClassificationLabels,
+            isBrandedContent: isBrandedContent
+        )
+        try await updateChannelInfo(forBroadcasterID: broadcasterId, with: update)
     }
 
     // MARK: - Emotes
@@ -481,17 +486,56 @@ public struct ContentClassificationLabel: Sendable {
     }
 }
 
-private struct UpdateChannelInfoRequest: Encodable {
-    let title: String?
-    let gameId: String?
-    let broadcasterLanguage: String?
-    let delay: Int?
-    let tags: [String]?
-    let contentClassificationLabels: [ContentClassificationLabel]?
-    let isBrandedContent: Bool?
+public struct ChannelInfoUpdate: Encodable, Sendable, Equatable {
+    public let title: String?
+    public let gameId: String?
+    public let broadcasterLanguage: String?
+    public let delay: Int?
+    public let tags: [String]?
+    public let contentClassificationLabels: [ContentClassificationLabel]?
+    public let isBrandedContent: Bool?
+
+    public init(
+        title: String? = nil,
+        gameId: String? = nil,
+        broadcasterLanguage: String? = nil,
+        delay: Int? = nil,
+        tags: [String]? = nil,
+        contentClassificationLabels: [ContentClassificationLabel]? = nil,
+        isBrandedContent: Bool? = nil
+    ) {
+        self.title = title
+        self.gameId = gameId
+        self.broadcasterLanguage = broadcasterLanguage
+        self.delay = delay
+        self.tags = tags
+        self.contentClassificationLabels = contentClassificationLabels
+        self.isBrandedContent = isBrandedContent
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case gameId
+        case broadcasterLanguage
+        case delay
+        case tags
+        case contentClassificationLabels
+        case isBrandedContent
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(gameId, forKey: .gameId)
+        try container.encodeIfPresent(broadcasterLanguage, forKey: .broadcasterLanguage)
+        try container.encodeIfPresent(delay, forKey: .delay)
+        try container.encodeIfPresent(tags, forKey: .tags)
+        try container.encodeIfPresent(contentClassificationLabels, forKey: .contentClassificationLabels)
+        try container.encodeIfPresent(isBrandedContent, forKey: .isBrandedContent)
+    }
 }
 
-extension ContentClassificationLabel: Encodable {}
+extension ContentClassificationLabel: Encodable, Equatable {}
 
 private struct EventSubSubscriptionRequest: Encodable {
     let type: String

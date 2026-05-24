@@ -16,8 +16,8 @@ public struct TwitchSubscription: Codable, Sendable, Equatable {
     /// Display name of the subscribing user.
     public let userName: String
 
-    /// Subscription tier: `"1000"` (Tier 1), `"2000"` (Tier 2), `"3000"` (Tier 3).
-    public let tier: String
+    /// Subscription tier.
+    public let tier: SubscriptionTier
 
     /// Whether this subscription was gifted by another user.
     public let isGift: Bool

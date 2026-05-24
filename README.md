@@ -36,9 +36,9 @@ let twitch = TwitchClient(
 
 let authURL = await twitch.auth.implicitGrantURL(
     scopes: [
-        TwitchScope.userReadEmail.rawValue,
-        TwitchScope.userReadChat.rawValue,
-        TwitchScope.userWriteChat.rawValue,
+        .userReadEmail,
+        .userReadChat,
+        .userWriteChat,
     ],
     state: "<csrf token>"
 )
@@ -55,8 +55,8 @@ let twitch = TwitchClient(
 
 let authURL = await twitch.auth.authorizationCodeURL(
     scopes: [
-        TwitchScope.userReadEmail.rawValue,
-        TwitchScope.channelManageBroadcast.rawValue,
+        .userReadEmail,
+        .channelManageBroadcast,
     ],
     state: "<csrf token>"
 )
@@ -65,7 +65,7 @@ let authURL = await twitch.auth.authorizationCodeURL(
 After your app receives an authorization code:
 
 ```swift
-try await twitch.auth.handleAuthCode(code)
+try await twitch.auth.authenticate(withAuthorizationCode: code)
 ```
 
 If your host app or backend owns OAuth, inject an existing token:
@@ -112,7 +112,7 @@ Connect to EventSub and subscribe to typed subscription requests:
 try await twitch.eventSub.connect()
 
 try await twitch.eventSub.subscribe(
-    .channelChatMessage(
+    .makeChannelChatMessage(
         broadcasterID: "<broadcaster id>",
         userID: "<user id>"
     )
@@ -157,6 +157,8 @@ For iOS apps, avoid shipping a client secret in the app bundle. Prefer implicit 
 ## Scope Catalog
 
 `TwitchScope` includes the current Twitch API, EventSub, IRC chat, and PubSub-specific scope strings documented by Twitch.
+
+Use `TwitchAuth.defaultScopes` for the small starter set used by TwitchKit convenience APIs, or `TwitchAuth.allScopes` when you need the complete catalog. OAuth helper methods prefer typed `[TwitchScope]` values and also provide raw-scope overloads for newly added Twitch scopes.
 
 Request only the scopes your app needs. Twitch warns that requesting unnecessary scopes can put API access at risk.
 

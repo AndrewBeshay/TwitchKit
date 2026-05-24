@@ -76,8 +76,7 @@ public struct TwitchBadge: Codable, Sendable, Equatable, Identifiable {
     public let description: String?
 
     /// What happens when a viewer clicks this badge in chat.
-    /// Common values: `"subscribe_to_channel"`, `"visit_url"`, `"none"`.
-    public let clickAction: String?
+    public let clickAction: BadgeClickAction?
 
     /// URL opened when the badge is clicked (if `clickAction` is `"visit_url"`).
     public let clickUrl: String?

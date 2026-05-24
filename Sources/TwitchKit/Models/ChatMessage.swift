@@ -27,7 +27,7 @@ public struct ChatMessage: Codable, Sendable, Equatable, Identifiable {
     public let message: ChatMessageBody
     public let color: String
     public let badges: [ChatBadge]
-    public let messageType: String  // "text", "channel_points_highlighted", "channel_points_sub_only", etc.
+    public let messageType: ChatMessageType
 
     // Cheer (bits)
     public let cheer: Cheer?
@@ -70,7 +70,7 @@ public struct ChatMessage: Codable, Sendable, Equatable, Identifiable {
 }
 
 public struct ChatFragment: Codable, Sendable, Equatable {
-    public let type: String  // "text", "emote", "cheermote", "mention"
+    public let type: ChatFragmentType
     public let text: String
     public let cheermote: CheermoteReference?
     public let emote: EmoteReference?

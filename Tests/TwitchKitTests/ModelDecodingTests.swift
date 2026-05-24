@@ -137,12 +137,12 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(msg.chatterUserLogin, "viewer32")
         XCTAssertEqual(msg.message.text, "Hi chat")
         XCTAssertEqual(msg.message.fragments.count, 1)
-        XCTAssertEqual(msg.message.fragments[0].type, "text")
+        XCTAssertEqual(msg.message.fragments[0].type, .text)
         XCTAssertEqual(msg.color, "#00FF7F")
         XCTAssertEqual(msg.badges.count, 2)
         XCTAssertEqual(msg.badges[0].setId, "moderator")
         XCTAssertEqual(msg.badges[1].info, "16")
-        XCTAssertEqual(msg.messageType, "text")
+        XCTAssertEqual(msg.messageType, .text)
         XCTAssertEqual(msg.cheer, nil)
         XCTAssertEqual(msg.reply, nil)
         XCTAssertEqual(msg.sourceBroadcasterUserId, nil)
@@ -349,7 +349,7 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(badgeSet.versions[0].id, "0")
         XCTAssertEqual(badgeSet.versions[0].title, "Subscriber")
         XCTAssertEqual(badgeSet.versions[1].id, "12")
-        XCTAssertEqual(badgeSet.versions[1].clickAction, "subscribe_to_channel")
+        XCTAssertEqual(badgeSet.versions[1].clickAction, .subscribeToChannel)
         XCTAssertEqual(badgeSet.versions[1].clickUrl, nil)
     }
 
@@ -388,7 +388,7 @@ final class ModelDecodingTests: XCTestCase {
         let sub = try JSONDecoder.twitch().decode(TwitchSubscription.self, from: json)
 
         XCTAssertEqual(sub.userId, "5678")
-        XCTAssertEqual(sub.tier, "1000")
+        XCTAssertEqual(sub.tier, .tier1)
         XCTAssertEqual(sub.isGift, false)
     }
 
@@ -404,7 +404,7 @@ final class ModelDecodingTests: XCTestCase {
 
         let sub = try JSONDecoder.twitch().decode(TwitchSubscription.self, from: json)
 
-        XCTAssertEqual(sub.tier, "2000")
+        XCTAssertEqual(sub.tier, .tier2)
         XCTAssertEqual(sub.isGift, true)
     }
 
