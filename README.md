@@ -1,6 +1,10 @@
 # TwitchKit
 
 [![CI](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml/badge.svg)](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml)
+![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
+![Platforms](https://img.shields.io/badge/platforms-iOS%2026%20%7C%20macOS%2015-lightgrey.svg)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/tag/AndrewBeshay/TwitchKit?include_prereleases&label=release)](https://github.com/AndrewBeshay/TwitchKit/releases)
 
 TwitchKit is a Swift Package for working with the Twitch Helix API and EventSub WebSocket transport from modern Swift apps.
 
