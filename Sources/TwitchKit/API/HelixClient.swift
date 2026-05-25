@@ -7,6 +7,7 @@ public struct HelixClient: Sendable {
     private let tokenProvider: any TwitchAccessTokenProvider
     private let clientId: String
     private let httpClient: any HTTPClient
+    private let requestConfiguration: HelixRequestConfiguration
     private let retryPolicy: HelixRetryPolicy
     private let responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)?
 
@@ -16,12 +17,14 @@ public struct HelixClient: Sendable {
         tokenProvider: any TwitchAccessTokenProvider,
         clientId: String,
         httpClient: any HTTPClient = URLSessionHTTPClient(),
+        requestConfiguration: HelixRequestConfiguration = .default,
         retryPolicy: HelixRetryPolicy = .default,
         responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)? = nil
     ) {
         self.tokenProvider = tokenProvider
         self.clientId = clientId
         self.httpClient = httpClient
+        self.requestConfiguration = requestConfiguration
         self.retryPolicy = retryPolicy
         self.responseMetadataHandler = responseMetadataHandler
     }
@@ -30,6 +33,7 @@ public struct HelixClient: Sendable {
         auth: TwitchAuth,
         clientId: String,
         httpClient: any HTTPClient = URLSessionHTTPClient(),
+        requestConfiguration: HelixRequestConfiguration = .default,
         retryPolicy: HelixRetryPolicy = .default,
         responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)? = nil
     ) {
@@ -37,6 +41,7 @@ public struct HelixClient: Sendable {
             tokenProvider: auth,
             clientId: clientId,
             httpClient: httpClient,
+            requestConfiguration: requestConfiguration,
             retryPolicy: retryPolicy,
             responseMetadataHandler: responseMetadataHandler
         )
@@ -127,6 +132,9 @@ public struct HelixClient: Sendable {
         var urlRequest = URLRequest(url: components.url!)
         urlRequest.httpMethod = method
         urlRequest.httpBody = body
+        if let timeoutInterval = requestConfiguration.timeoutInterval {
+            urlRequest.timeoutInterval = timeoutInterval
+        }
 
         let token = try await tokenProvider.accessToken()
         urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -163,9 +171,14 @@ public struct HelixClient: Sendable {
             }
 
             return HelixHTTPResponse(data: data, httpResponse: httpResponse)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as HelixError {
             throw error
         } catch {
+            if Task.isCancelled {
+                throw CancellationError()
+            }
             throw HelixError.networkError(error.localizedDescription)
         }
     }
@@ -255,6 +268,22 @@ public struct HelixClient: Sendable {
 
     private func intHeader(_ field: String, from response: HTTPURLResponse) -> Int? {
         response.value(forHTTPHeaderField: field).flatMap(Int.init)
+    }
+}
+
+/// Request-level configuration for Helix HTTP calls.
+public struct HelixRequestConfiguration: Sendable, Equatable {
+    /// Default Helix request configuration.
+    public static let `default` = Self(timeoutInterval: 30)
+
+    /// Leaves URLSession's default timeout behavior unchanged.
+    public static let urlSessionDefault = Self(timeoutInterval: nil)
+
+    /// The timeout, in seconds, assigned to each Helix `URLRequest`.
+    public let timeoutInterval: TimeInterval?
+
+    public init(timeoutInterval: TimeInterval? = 30) {
+        self.timeoutInterval = timeoutInterval
     }
 }
 

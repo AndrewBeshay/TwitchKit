@@ -14,6 +14,7 @@ public final class TwitchClient: Sendable {
         tokenNamespace: String? = nil,
         tokenStore: (any TwitchTokenStore)? = nil,
         httpClient: any HTTPClient = URLSessionHTTPClient(),
+        requestConfiguration: HelixRequestConfiguration = .default,
         retryPolicy: HelixRetryPolicy = .default,
         responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)? = nil,
         isLive: @escaping @Sendable () async -> Bool = { false }
@@ -34,6 +35,7 @@ public final class TwitchClient: Sendable {
             auth: auth,
             clientId: clientId,
             httpClient: httpClient,
+            requestConfiguration: requestConfiguration,
             retryPolicy: retryPolicy,
             responseMetadataHandler: responseMetadataHandler
         )

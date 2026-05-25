@@ -32,6 +32,53 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Client-Id"), "client-id")
     }
 
+    func test_helixRequestUsesConfiguredTimeout() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "id": "1",
+                  "login": "twitchdev",
+                  "display_name": "TwitchDev",
+                  "profile_image_url": "https://example.com/profile.png",
+                  "broadcaster_type": ""
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(
+            auth: auth,
+            clientId: "client-id",
+            httpClient: transport,
+            requestConfiguration: HelixRequestConfiguration(timeoutInterval: 12)
+        )
+
+        _ = try await api.fetchUser()
+
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.timeoutInterval, 12)
+    }
+
+    func test_helixRequestPreservesCancellation() async throws {
+        let transport = MockHTTPClient(responses: [.cancellation])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        do {
+            _ = try await api.fetchUser()
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+    }
+
     func test_fetchUsersUsesRepeatedIdAndLoginQueryParameters() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 200, body: """
@@ -964,6 +1011,7 @@ actor MockHTTPClient: HTTPClient {
     enum Response {
         case json(statusCode: Int, body: String, headers: [String: String] = [:])
         case nonHTTP(body: Data)
+        case cancellation
     }
 
     private var responses: [Response]
@@ -995,6 +1043,9 @@ actor MockHTTPClient: HTTPClient {
 
         case .nonHTTP(let body):
             return (body, URLResponse(url: request.url ?? URL(string: "https://example.com")!, mimeType: nil, expectedContentLength: body.count, textEncodingName: nil))
+
+        case .cancellation:
+            throw CancellationError()
         }
     }
 }

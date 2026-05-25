@@ -15,8 +15,10 @@ public actor EventSubClient {
     private var sessionId: String?
     private var receiveTask: Task<Void, Never>?
     private var keepaliveTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
     private var keepaliveTimeout: Int = 10
     private var reconnectAttempts: Int = 0
+    private var shouldReconnect = false
     private var desiredSubscriptions: Set<EventSubSubscription> = []
     private var seenMessageIds: Set<String> = []
 
@@ -34,6 +36,7 @@ public actor EventSubClient {
     private var welcomeContinuation: CheckedContinuation<Void, Error>?
 
     public func connect(timeout: Duration = .seconds(15)) async throws {
+        shouldReconnect = true
         try await openConnection(to: Self.websocketURL, resetReconnectAttempts: true, timeout: timeout)
     }
 
@@ -54,19 +57,27 @@ public actor EventSubClient {
         }
         startReceiveLoop()
 
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { try await self.waitForWelcome() }
-            group.addTask {
-                try await Task.sleep(for: timeout)
-                throw HelixError.networkError("Timed out waiting for EventSub session_welcome")
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { try await self.waitForWelcome() }
+                group.addTask {
+                    try await Task.sleep(for: timeout)
+                    throw HelixError.networkError("Timed out waiting for EventSub session_welcome")
+                }
+                defer { group.cancelAll() }
+                try await group.next()
             }
-            defer { group.cancelAll() }
-            try await group.next()
+        } catch {
+            cleanupFailedConnection(task: task, error: error)
+            throw error
         }
     }
 
     public func disconnect() async {
         logger.info("🔌 EventSub: disconnecting")
+        shouldReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
         receiveTask?.cancel()
         receiveTask = nil
         keepaliveTask?.cancel()
@@ -173,7 +184,8 @@ public actor EventSubClient {
         case "session_reconnect":
             if let newUrl = envelope.payload.session?.reconnectUrl,
                let url = URL(string: newUrl) {
-                Task { await reconnectTo(url) }
+                reconnectTask?.cancel()
+                reconnectTask = Task { await reconnectTo(url) }
             }
 
         case "revocation":
@@ -207,6 +219,7 @@ public actor EventSubClient {
     // MARK: - Reconnection
 
     private func reconnectTo(_ url: URL) async {
+        guard shouldReconnect else { return }
         let oldTask = webSocketTask
         let newTask = URLSession.shared.webSocketTask(with: url)
         webSocketTask = newTask
@@ -228,10 +241,13 @@ public actor EventSubClient {
         welcomeContinuation?.resume(throwing: HelixError.networkError("WebSocket disconnected before session_welcome"))
         welcomeContinuation = nil
 
-        Task { await attemptReconnect() }
+        guard shouldReconnect else { return }
+        reconnectTask?.cancel()
+        reconnectTask = Task { await attemptReconnect() }
     }
 
     private func attemptReconnect() async {
+        guard shouldReconnect else { return }
         let live = await isLive()
         let maxAttempts = live ? Int.max : 5
         let baseDelay: Double = live ? 0.5 : 1.0
@@ -242,6 +258,7 @@ public actor EventSubClient {
 
         let delay = min(baseDelay * pow(2.0, Double(reconnectAttempts - 1)), maxDelay)
         try? await Task.sleep(for: .seconds(delay))
+        guard shouldReconnect, !Task.isCancelled else { return }
 
         do {
             try await openConnection(to: Self.websocketURL, resetReconnectAttempts: false, timeout: .seconds(15))
@@ -256,6 +273,20 @@ public actor EventSubClient {
             welcomeContinuation?.resume(throwing: HelixError.networkError("Superseded EventSub connection attempt"))
             welcomeContinuation = continuation
         }
+    }
+
+    private func cleanupFailedConnection(task: URLSessionWebSocketTask, error: Error) {
+        receiveTask?.cancel()
+        receiveTask = nil
+        keepaliveTask?.cancel()
+        keepaliveTask = nil
+        task.cancel(with: .abnormalClosure, reason: nil)
+        if webSocketTask === task {
+            webSocketTask = nil
+        }
+        sessionId = nil
+        welcomeContinuation?.resume(throwing: error)
+        welcomeContinuation = nil
     }
 
     private func resubscribeAll() async throws {

@@ -16,6 +16,8 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 - `TwitchKitSmokeTest` executable target for live Twitch API, EventSub, chat, and cleanup smoke checks.
 - Typed Helix rate-limit metadata and configurable retry policy for Twitch's recommended 503 retry.
 - Successful Helix page responses and optional client callbacks now expose response metadata.
+- Configurable Helix request timeouts and cancellation-preserving network error handling.
+- EventSub connection timeout cleanup and reconnect cancellation when disconnecting.
 
 ## [0.1.0-alpha.2] - 2026-05-25
 
