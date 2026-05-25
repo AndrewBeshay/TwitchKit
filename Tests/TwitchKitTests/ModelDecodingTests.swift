@@ -434,6 +434,7 @@ final class ModelDecodingTests: XCTestCase {
 
         XCTAssertEqual(stream.userLogin, "twitchdev")
         XCTAssertEqual(stream.tags, ["Swift", "API"])
+        XCTAssertEqual(stream.type, .live)
         XCTAssertEqual(stream.viewerCount, 42)
         XCTAssertEqual(stream.language, "en")
     }

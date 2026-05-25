@@ -108,7 +108,7 @@ final class EventSubMessageTests: XCTestCase {
         }
         XCTAssertEqual(stream.id, "9001")
         XCTAssertEqual(stream.broadcasterUserId, "1337")
-        XCTAssertEqual(stream.type, "live")
+        XCTAssertEqual(stream.type, .live)
     }
 
     func test_decodeTypedChannelUpdateEvent() throws {
@@ -190,6 +190,7 @@ final class EventSubMessageTests: XCTestCase {
         guard case .channelPointsCustomRewardRedemptionAdd(let redemption) = redemptionEvent else {
             return XCTFail("Expected .channelPointsCustomRewardRedemptionAdd")
         }
+        XCTAssertEqual(redemption.status, .unfulfilled)
         XCTAssertEqual(redemption.reward.title, "Hydrate")
         XCTAssertEqual(redemption.userInput, "Hydrate")
     }

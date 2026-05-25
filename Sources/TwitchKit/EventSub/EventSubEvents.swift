@@ -16,7 +16,7 @@ public struct EventSubStreamOnline: Codable, Sendable, Equatable {
     public let broadcasterUserId: String
     public let broadcasterUserLogin: String
     public let broadcasterUserName: String
-    public let type: String
+    public let type: TwitchStreamType
     public let startedAt: Date
 }
 
@@ -94,7 +94,7 @@ public struct EventSubChannelPointsCustomRewardRedemption: Codable, Sendable, Eq
     public let userLogin: String
     public let userName: String
     public let userInput: String
-    public let status: String
+    public let status: ChannelPointsRedemptionStatus
     public let reward: Reward
     public let redeemedAt: Date
 

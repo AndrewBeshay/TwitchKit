@@ -545,7 +545,7 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(page.nextCursor, "next-cursor")
         XCTAssertEqual(page.data.first?.id, "subscription-1")
         XCTAssertEqual(page.data.first?.status, .enabled)
-        XCTAssertEqual(page.data.first?.transport.method, "websocket")
+        XCTAssertEqual(page.data.first?.transport.method, .websocket)
         XCTAssertEqual(page.data.first?.transport.sessionId, "session-id")
 
         let requests = await transport.recordedRequests()
@@ -597,6 +597,22 @@ final class HTTPClientTests: XCTestCase {
         )
     }
 
+    func test_fetchEventSubSubscriptionsPageRejectsEmptyFilterValue() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchEventSubSubscriptionsPage(filter: .subscriptionID(""))
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "EventSub subscription filter value is required")
+        }
+    }
+
     func test_deleteEventSubSubscriptionUsesDeleteMethodAndIdQuery() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 204, body: "")
@@ -614,6 +630,22 @@ final class HTTPClientTests: XCTestCase {
             request.url?.absoluteString,
             "https://api.twitch.tv/helix/eventsub/subscriptions?id=subscription-1"
         )
+    }
+
+    func test_deleteEventSubSubscriptionRejectsEmptyID() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            try await api.deleteEventSubSubscription(id: "")
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "EventSub subscription ID is required")
+        }
     }
 
     func test_fetchChannelsInfoUsesRepeatedBroadcasterIDs() async throws {

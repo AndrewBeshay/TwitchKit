@@ -1,7 +1,7 @@
 import Foundation
 
 /// A chat message type with forward-compatible support for values Twitch may add later.
-public enum ChatMessageType: Codable, Sendable, Equatable {
+public enum ChatMessageType: Codable, RawRepresentable, Sendable, Equatable {
     case text
     case channelPointsHighlighted
     case channelPointsSubOnly
@@ -22,17 +22,20 @@ public enum ChatMessageType: Codable, Sendable, Equatable {
         }
     }
 
-    public init(from decoder: Decoder) throws {
-        let value = try decoder.singleValueContainer().decode(String.self)
-        self = switch value {
+    public init(rawValue: String) {
+        self = switch rawValue {
         case "text": .text
         case "channel_points_highlighted": .channelPointsHighlighted
         case "channel_points_sub_only": .channelPointsSubOnly
         case "user_intro": .userIntro
         case "power_ups_message_effect": .powerUpsMessageEffect
         case "power_ups_gigantified_emote": .powerUpsGigantifiedEmote
-        default: .unknown(value)
+        default: .unknown(rawValue)
         }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -42,7 +45,7 @@ public enum ChatMessageType: Codable, Sendable, Equatable {
 }
 
 /// A fragment type within an EventSub chat message.
-public enum ChatFragmentType: Codable, Sendable, Equatable {
+public enum ChatFragmentType: Codable, RawRepresentable, Sendable, Equatable {
     case text
     case cheermote
     case emote
@@ -59,15 +62,18 @@ public enum ChatFragmentType: Codable, Sendable, Equatable {
         }
     }
 
-    public init(from decoder: Decoder) throws {
-        let value = try decoder.singleValueContainer().decode(String.self)
-        self = switch value {
+    public init(rawValue: String) {
+        self = switch rawValue {
         case "text": .text
         case "cheermote": .cheermote
         case "emote": .emote
         case "mention": .mention
-        default: .unknown(value)
+        default: .unknown(rawValue)
         }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -77,7 +83,7 @@ public enum ChatFragmentType: Codable, Sendable, Equatable {
 }
 
 /// A Twitch subscription tier.
-public enum SubscriptionTier: Codable, Sendable, Equatable {
+public enum SubscriptionTier: Codable, RawRepresentable, Sendable, Equatable {
     case tier1
     case tier2
     case tier3
@@ -94,15 +100,18 @@ public enum SubscriptionTier: Codable, Sendable, Equatable {
         }
     }
 
-    public init(from decoder: Decoder) throws {
-        let value = try decoder.singleValueContainer().decode(String.self)
-        self = switch value {
+    public init(rawValue: String) {
+        self = switch rawValue {
         case "1000": .tier1
         case "2000": .tier2
         case "3000": .tier3
         case "Prime": .prime
-        default: .unknown(value)
+        default: .unknown(rawValue)
         }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -112,7 +121,7 @@ public enum SubscriptionTier: Codable, Sendable, Equatable {
 }
 
 /// A Twitch badge click action with forward-compatible support for new values.
-public enum BadgeClickAction: Codable, Sendable, Equatable {
+public enum BadgeClickAction: Codable, RawRepresentable, Sendable, Equatable {
     case none
     case subscribeToChannel
     case visitURL
@@ -127,14 +136,119 @@ public enum BadgeClickAction: Codable, Sendable, Equatable {
         }
     }
 
-    public init(from decoder: Decoder) throws {
-        let value = try decoder.singleValueContainer().decode(String.self)
-        self = switch value {
+    public init(rawValue: String) {
+        self = switch rawValue {
         case "none": .none
         case "subscribe_to_channel": .subscribeToChannel
         case "visit_url": .visitURL
-        default: .unknown(value)
+        default: .unknown(rawValue)
         }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+/// A Twitch stream type with forward-compatible support for new values.
+public enum TwitchStreamType: Codable, RawRepresentable, Sendable, Equatable {
+    case all
+    case live
+    case unknown(String)
+
+    public var rawValue: String {
+        switch self {
+        case .all: "all"
+        case .live: "live"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(rawValue: String) {
+        self = switch rawValue {
+        case "all": .all
+        case "live": .live
+        default: .unknown(rawValue)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+/// An EventSub transport method with forward-compatible support for new values.
+public enum EventSubTransportMethod: Codable, RawRepresentable, Sendable, Equatable {
+    case webhook
+    case websocket
+    case conduit
+    case unknown(String)
+
+    public var rawValue: String {
+        switch self {
+        case .webhook: "webhook"
+        case .websocket: "websocket"
+        case .conduit: "conduit"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(rawValue: String) {
+        self = switch rawValue {
+        case "webhook": .webhook
+        case "websocket": .websocket
+        case "conduit": .conduit
+        default: .unknown(rawValue)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+/// A channel points custom reward redemption status.
+public enum ChannelPointsRedemptionStatus: Codable, RawRepresentable, Sendable, Equatable {
+    case unknown(String)
+    case unfulfilled
+    case fulfilled
+    case canceled
+
+    public var rawValue: String {
+        switch self {
+        case .unknown(let value): value
+        case .unfulfilled: "unfulfilled"
+        case .fulfilled: "fulfilled"
+        case .canceled: "canceled"
+        }
+    }
+
+    public init(rawValue: String) {
+        self = switch rawValue {
+        case "unfulfilled": .unfulfilled
+        case "fulfilled": .fulfilled
+        case "canceled": .canceled
+        default: .unknown(rawValue)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
     }
 
     public func encode(to encoder: Encoder) throws {

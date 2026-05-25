@@ -1,14 +1,5 @@
 import Foundation
 
-/// Filter values accepted by the Get Streams endpoint.
-public enum TwitchStreamQueryType: String, Sendable, Equatable {
-    /// Return all streams.
-    case all
-
-    /// Return live streams.
-    case live
-}
-
 /// A live Twitch stream returned by Helix.
 ///
 /// - SeeAlso: [Get Streams](https://dev.twitch.tv/docs/api/reference/#get-streams)
@@ -31,8 +22,8 @@ public struct TwitchStream: Decodable, Sendable, Equatable {
     /// The name of the game/category being streamed.
     public let gameName: String
 
-    /// The stream type. Typically `"live"` for active streams.
-    public let type: String
+    /// The stream type. Typically `.live` for active streams.
+    public let type: TwitchStreamType
 
     /// The stream title.
     public let title: String

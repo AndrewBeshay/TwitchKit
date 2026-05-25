@@ -19,7 +19,7 @@ extension HelixClient {
         userLogins: [String] = [],
         gameIDs: [String] = [],
         languages: [String] = [],
-        type: TwitchStreamQueryType? = nil,
+        type: TwitchStreamType? = nil,
         first: Int? = nil,
         after cursor: String? = nil,
         before previousCursor: String? = nil
@@ -55,7 +55,7 @@ extension HelixClient {
         userLogins: [String] = [],
         gameIDs: [String] = [],
         languages: [String] = [],
-        type: TwitchStreamQueryType? = nil,
+        type: TwitchStreamType? = nil,
         pageSize: Int? = nil
     ) -> HelixPagedSequence<TwitchStream> {
         var queryItems =

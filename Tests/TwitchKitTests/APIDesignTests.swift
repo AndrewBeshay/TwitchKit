@@ -84,4 +84,19 @@ final class APIDesignTests: XCTestCase {
         XCTAssertEqual(known.rawValue, "text")
         XCTAssertEqual(unknown.rawValue, "future_type")
     }
+
+    func test_twitchStringEnumsDecodeUnknownValues() throws {
+        let streamType = try JSONDecoder.twitch().decode(TwitchStreamType.self, from: Data(#""rerun""#.utf8))
+        let transport = try JSONDecoder.twitch().decode(EventSubTransportMethod.self, from: Data(#""future_transport""#.utf8))
+        let redemption = try JSONDecoder.twitch().decode(ChannelPointsRedemptionStatus.self, from: Data(#""future_status""#.utf8))
+        let subscriptionStatus = try JSONDecoder.twitch().decode(
+            EventSubSubscriptionStatus.self,
+            from: Data(#""future_subscription_status""#.utf8)
+        )
+
+        XCTAssertEqual(streamType.rawValue, "rerun")
+        XCTAssertEqual(transport.rawValue, "future_transport")
+        XCTAssertEqual(redemption.rawValue, "future_status")
+        XCTAssertEqual(subscriptionStatus.rawValue, "future_subscription_status")
+    }
 }
