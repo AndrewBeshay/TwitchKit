@@ -18,7 +18,8 @@ enum HelixQuery {
     static func appendPagination(
         to queryItems: inout [URLQueryItem],
         first: Int?,
-        after cursor: String?
+        after cursor: String?,
+        before previousCursor: String? = nil
     ) throws {
         if let first {
             guard (1...100).contains(first) else {
@@ -31,6 +32,10 @@ enum HelixQuery {
 
         if let cursor {
             queryItems.append(URLQueryItem(name: "after", value: cursor))
+        }
+
+        if let previousCursor {
+            queryItems.append(URLQueryItem(name: "before", value: previousCursor))
         }
     }
 }

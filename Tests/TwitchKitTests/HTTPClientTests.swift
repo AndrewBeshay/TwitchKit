@@ -32,6 +32,289 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Client-Id"), "client-id")
     }
 
+    func test_fetchUsersUsesRepeatedIdAndLoginQueryParameters() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "id": "1",
+                  "login": "twitchdev",
+                  "display_name": "TwitchDev",
+                  "profile_image_url": "https://example.com/profile.png",
+                  "broadcaster_type": ""
+                },
+                {
+                  "id": "2",
+                  "login": "anotherdev",
+                  "display_name": "AnotherDev",
+                  "profile_image_url": "https://example.com/profile2.png",
+                  "broadcaster_type": ""
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let users = try await api.fetchUsers(ids: ["1"], logins: ["anotherdev"])
+
+        XCTAssertEqual(users.map(\.login), ["twitchdev", "anotherdev"])
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/users?id=1&login=anotherdev"
+        )
+    }
+
+    func test_fetchUserByLoginReturnsFirstMatch() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "id": "1",
+                  "login": "twitchdev",
+                  "display_name": "TwitchDev",
+                  "profile_image_url": "https://example.com/profile.png",
+                  "broadcaster_type": ""
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let user = try await api.fetchUser(login: "twitchdev")
+
+        XCTAssertEqual(user.id, "1")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.first?.url?.absoluteString, "https://api.twitch.tv/helix/users?login=twitchdev")
+    }
+
+    func test_fetchUsersRequiresAtLeastOneIdentifier() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchUsers()
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "At least one user ID or login is required")
+        }
+    }
+
+    func test_fetchStreamsPageUsesFilterAndPaginationQueryParameters() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "id": "stream-1",
+                  "user_id": "1",
+                  "user_login": "twitchdev",
+                  "user_name": "TwitchDev",
+                  "game_id": "493057",
+                  "game_name": "PUBG: BATTLEGROUNDS",
+                  "type": "live",
+                  "title": "Building TwitchKit",
+                  "tags": ["Swift"],
+                  "viewer_count": 42,
+                  "started_at": "2024-01-01T00:00:00Z",
+                  "language": "en",
+                  "thumbnail_url": "https://example.com/{width}x{height}.jpg",
+                  "is_mature": false
+                }
+              ],
+              "pagination": { "cursor": "next-cursor" }
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchStreamsPage(
+            userIDs: ["1"],
+            gameIDs: ["493057"],
+            languages: ["en"],
+            type: .live,
+            first: 25,
+            after: "cursor",
+            before: "previous-cursor"
+        )
+
+        XCTAssertEqual(page.data.first?.userLogin, "twitchdev")
+        XCTAssertEqual(page.nextCursor, "next-cursor")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/streams?user_id=1&game_id=493057&language=en&type=live&first=25&after=cursor&before=previous-cursor"
+        )
+    }
+
+    func test_fetchStreamForOfflineUserReturnsNil() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[]}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let stream = try await api.fetchStream(forUserID: "offline-user")
+
+        XCTAssertNil(stream)
+    }
+
+    func test_fetchGamesUsesRepeatedIdentifierQueryParameters() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "id": "493057",
+                  "name": "PUBG: BATTLEGROUNDS",
+                  "box_art_url": "https://static-cdn.jtvnw.net/ttv-boxart/493057-{width}x{height}.jpg",
+                  "igdb_id": "27789"
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let games = try await api.fetchGames(ids: ["493057"], names: ["Just Chatting"], igdbIDs: ["27789"])
+
+        XCTAssertEqual(games.first?.name, "PUBG: BATTLEGROUNDS")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/games?id=493057&name=Just%20Chatting&igdb_id=27789"
+        )
+    }
+
+    func test_fetchTopGamesPageUsesPaginationQueryParameters() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "id": "493057",
+                  "name": "PUBG: BATTLEGROUNDS",
+                  "box_art_url": "https://static-cdn.jtvnw.net/ttv-boxart/493057-{width}x{height}.jpg",
+                  "igdb_id": "27789"
+                }
+              ],
+              "pagination": { "cursor": "next-cursor" }
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchTopGamesPage(first: 10, after: "cursor")
+
+        XCTAssertEqual(page.data.first?.id, "493057")
+        XCTAssertEqual(page.nextCursor, "next-cursor")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/games/top?first=10&after=cursor"
+        )
+    }
+
+    func test_sendChatMessageEncodesTypedRequestBody() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "message_id": "message-1",
+                  "is_sent": true
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let result = try await api.sendChatMessage(
+            broadcasterId: "broadcaster-id",
+            senderId: "sender-id",
+            message: "Hello from TwitchKit",
+            replyParentMessageId: "parent-message-id",
+            forSourceOnly: true,
+            pin: true
+        )
+
+        XCTAssertEqual(result.messageId, "message-1")
+        XCTAssertTrue(result.isSent)
+
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first)
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.absoluteString, "https://api.twitch.tv/helix/chat/messages")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(object["broadcaster_id"] as? String, "broadcaster-id")
+        XCTAssertEqual(object["sender_id"] as? String, "sender-id")
+        XCTAssertEqual(object["message"] as? String, "Hello from TwitchKit")
+        XCTAssertEqual(object["reply_parent_message_id"] as? String, "parent-message-id")
+        XCTAssertEqual(object["for_source_only"] as? Bool, true)
+        XCTAssertEqual(object["pin"] as? Bool, true)
+    }
+
+    func test_sendChatMessageReturnsDropReasonWhenMessageIsNotSent() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "message_id": "",
+                  "is_sent": false,
+                  "drop_reason": {
+                    "code": "automod_held",
+                    "message": "Your message has been held for review by AutoMod."
+                  }
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let result = try await api.sendChatMessage(
+            broadcasterId: "broadcaster-id",
+            senderId: "sender-id",
+            message: "Held message"
+        )
+
+        XCTAssertFalse(result.isSent)
+        XCTAssertEqual(result.dropReason?.code, "automod_held")
+    }
+
     func test_fetchUserRefreshesTokenAndRetriesOnceAfterUnauthorized() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 401, body: #"{"data":[]}"#),
@@ -186,6 +469,85 @@ final class HTTPClientTests: XCTestCase {
         let request = try XCTUnwrap(requests.first)
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.absoluteString, "https://api.twitch.tv/helix/eventsub/subscriptions")
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let transportBody = try XCTUnwrap(object["transport"] as? [String: Any])
+        XCTAssertEqual(transportBody["method"] as? String, "websocket")
+        XCTAssertEqual(transportBody["session_id"] as? String, "session-id")
+    }
+
+    func test_eventSubSubscriptionSupportsWebhookTransport() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 202, body: #"{"data":[]}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        try await api.createEventSubSubscription(
+            type: "user.update",
+            version: "1",
+            condition: ["user_id": "1234"],
+            transport: .webhook(callback: URL(string: "https://example.com/eventsub")!, secret: "secret")
+        )
+
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first)
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let transportBody = try XCTUnwrap(object["transport"] as? [String: Any])
+        XCTAssertEqual(transportBody["method"] as? String, "webhook")
+        XCTAssertEqual(transportBody["callback"] as? String, "https://example.com/eventsub")
+        XCTAssertEqual(transportBody["secret"] as? String, "secret")
+    }
+
+    func test_fetchChannelsInfoUsesRepeatedBroadcasterIDs() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "broadcaster_id": "1",
+                  "broadcaster_login": "twitchdev",
+                  "broadcaster_name": "TwitchDev",
+                  "broadcaster_language": "en",
+                  "game_id": "509658",
+                  "game_name": "Just Chatting",
+                  "title": "Building TwitchKit",
+                  "delay": 0,
+                  "tags": ["Swift"],
+                  "content_classification_labels": [],
+                  "is_branded_content": false
+                },
+                {
+                  "broadcaster_id": "2",
+                  "broadcaster_login": "twitch",
+                  "broadcaster_name": "Twitch",
+                  "broadcaster_language": "en",
+                  "game_id": "509658",
+                  "game_name": "Just Chatting",
+                  "title": "Live",
+                  "delay": 0,
+                  "tags": [],
+                  "content_classification_labels": [],
+                  "is_branded_content": false
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let channels = try await api.fetchChannelsInfo(forBroadcasterIDs: ["1", "2"])
+
+        XCTAssertEqual(channels.map(\.broadcasterName), ["TwitchDev", "Twitch"])
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/channels?broadcaster_id=1&broadcaster_id=2"
+        )
     }
 
     func test_fetchChannelFollowersPageReturnsPaginationCursor() async throws {
@@ -216,6 +578,7 @@ final class HTTPClientTests: XCTestCase {
 
         XCTAssertEqual(page.data.map(\.userName), ["Viewer1"])
         XCTAssertEqual(page.nextCursor, "next-cursor")
+        XCTAssertEqual(page.total, 2)
 
         let requests = await transport.recordedRequests()
         XCTAssertEqual(

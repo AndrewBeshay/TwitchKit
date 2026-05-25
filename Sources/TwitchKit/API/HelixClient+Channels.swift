@@ -1,6 +1,33 @@
 import Foundation
 
 extension HelixClient {
+    /// Gets information about the specified channels.
+    ///
+    /// Returns the channel's title, game, language, tags, delay, content classification labels,
+    /// and branded content status. The `delay` field requires a user access token and partner status.
+    ///
+    /// - Parameter broadcasterIds: Broadcaster user IDs. Twitch currently allows up to 100.
+    /// - Returns: Channel information for the requested broadcasters.
+    /// - SeeAlso: [Get Channel Information](https://dev.twitch.tv/docs/api/reference/#get-channel-information)
+    public func fetchChannelsInfo(forBroadcasterIDs broadcasterIds: [String]) async throws -> [TwitchChannel] {
+        guard !broadcasterIds.isEmpty else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "At least one broadcaster ID is required")
+            )
+        }
+        guard broadcasterIds.count <= 100 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 100 broadcaster IDs")
+            )
+        }
+
+        let response: HelixResponse<TwitchChannel> = try await request(
+            endpoint: "channels",
+            queryItems: HelixQuery.items("broadcaster_id", values: broadcasterIds)
+        )
+        return response.data
+    }
+
     /// Gets information about the specified channel.
     ///
     /// Returns the channel's title, game, language, tags, delay, content classification labels,
@@ -10,11 +37,8 @@ extension HelixClient {
     /// - Returns: The channel information.
     /// - SeeAlso: [Get Channel Information](https://dev.twitch.tv/docs/api/reference/#get-channel-information)
     public func fetchChannelInfo(forBroadcasterID broadcasterId: String) async throws -> TwitchChannel {
-        let response: HelixResponse<TwitchChannel> = try await request(
-            endpoint: "channels",
-            queryItems: [URLQueryItem(name: "broadcaster_id", value: broadcasterId)]
-        )
-        guard let channel = response.data.first else { throw HelixError.notFound }
+        let channels = try await fetchChannelsInfo(forBroadcasterIDs: [broadcasterId])
+        guard let channel = channels.first else { throw HelixError.notFound }
         return channel
     }
     /// Updates a channel's properties.

@@ -12,6 +12,7 @@ extension HelixClient {
         let response: HelixResponse<TwitchEmote> = try await request(endpoint: "chat/emotes/global")
         return response.data
     }
+
     /// Gets the broadcaster's custom emotes (subscriber, Bits tier, follower emotes).
     ///
     /// Channel emotes include `tier` (subscription tier), `emoteType` (subscriptions/bitstier/follower),
@@ -27,6 +28,7 @@ extension HelixClient {
         )
         return response.data
     }
+
     /// Gets Twitch's global chat badges (e.g., staff, turbo, premium).
     ///
     /// Each badge set contains multiple versions with images at 1x/2x/4x resolutions.
@@ -39,6 +41,7 @@ extension HelixClient {
         let response: HelixResponse<TwitchBadgeSet> = try await request(endpoint: "chat/badges/global")
         return response.data
     }
+
     /// Gets the broadcaster's custom chat badges (e.g., subscriber tenure badges).
     ///
     /// Channel badges override global badges with the same `setId`.
@@ -54,6 +57,7 @@ extension HelixClient {
         )
         return response.data
     }
+
     /// Sends a chat message to a channel.
     ///
     /// The `senderId` must match the authenticated user's ID. Optionally reply
@@ -64,6 +68,8 @@ extension HelixClient {
     ///   - senderId: The authenticated user's ID (must match access token).
     ///   - message: The chat message text.
     ///   - replyParentMessageId: Optional message ID to reply to (creates a thread).
+    ///   - forSourceOnly: For app access tokens in Shared Chat, whether to send only to the source channel.
+    ///   - pin: Whether to send and immediately pin the message.
     /// - Returns: The result including `messageId`, `isSent`, and optional `dropReason`.
     /// - Throws: `HelixError.forbidden` if the user is banned or lacks permissions.
     /// - SeeAlso: [Send Chat Message](https://dev.twitch.tv/docs/api/reference/#send-chat-message)
@@ -71,17 +77,18 @@ extension HelixClient {
         broadcasterId: String,
         senderId: String,
         message: String,
-        replyParentMessageId: String? = nil
+        replyParentMessageId: String? = nil,
+        forSourceOnly: Bool? = nil,
+        pin: Bool? = nil
     ) async throws -> SendChatMessageResponse {
-        var body: [String: String] = [
-            "broadcaster_id": broadcasterId,
-            "sender_id": senderId,
-            "message": message,
-        ]
-        if let replyId = replyParentMessageId {
-            body["reply_parent_message_id"] = replyId
-        }
-
+        let body = SendChatMessageRequest(
+            broadcasterId: broadcasterId,
+            senderId: senderId,
+            message: message,
+            replyParentMessageId: replyParentMessageId,
+            forSourceOnly: forSourceOnly,
+            pin: pin
+        )
         let bodyData = try JSONEncoder.twitch().encode(body)
         let response: HelixResponse<SendChatMessageResponse> = try await request(
             endpoint: "chat/messages",
@@ -91,6 +98,15 @@ extension HelixClient {
         guard let result = response.data.first else { throw HelixError.notFound }
         return result
     }
+}
+
+private struct SendChatMessageRequest: Encodable {
+    let broadcasterId: String
+    let senderId: String
+    let message: String
+    let replyParentMessageId: String?
+    let forSourceOnly: Bool?
+    let pin: Bool?
 }
 
 /// Response from the Send Chat Message endpoint.

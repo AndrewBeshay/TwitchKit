@@ -14,6 +14,10 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 - `HelixClient` initializer that accepts any `TwitchAccessTokenProvider`.
 - Helix pagination primitives and channel followers pagination helpers.
 - Shared Helix query helpers for repeated parameters, optional parameters, and cursor pagination.
+- Helix user lookup helpers for fetching users by ID and login.
+- Helix stream and game/category helpers, including paginated streams and top games.
+- Typed Send Chat Message request encoding and response coverage, including `for_source_only` and `pin`.
+- EventSub subscription transport support for webhook, WebSocket, and conduit creation requests.
 
 ### Changed
 
@@ -22,6 +26,7 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 - Keychain writes now use an add-or-update flow and device-only background-safe accessibility.
 - Helix errors preserve Twitch's structured error response.
 - Helix response handling is shared across standard data responses, accepted responses, and no-content responses.
+- Helix pages now preserve response `total` values when Twitch includes them.
 
 ## [0.1.0-alpha.1] - 2026-05-25
 

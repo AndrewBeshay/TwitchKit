@@ -62,14 +62,16 @@ public struct TwitchAPIError: Decodable, Sendable, Equatable {
 public struct HelixResponse<T: Decodable & Sendable>: Decodable, Sendable {
     public let data: [T]
     public let pagination: Pagination?
+    public let total: Int?
 
-    public init(data: [T], pagination: Pagination? = nil) {
+    public init(data: [T], pagination: Pagination? = nil, total: Int? = nil) {
         self.data = data
         self.pagination = pagination
+        self.total = total
     }
 
     public var page: HelixPage<T> {
-        HelixPage(data: data, pagination: pagination)
+        HelixPage(data: data, pagination: pagination, total: total)
     }
 }
 
@@ -85,10 +87,12 @@ public struct Pagination: Decodable, Sendable, Equatable {
 public struct HelixPage<Element: Sendable>: Sendable {
     public let data: [Element]
     public let pagination: Pagination?
+    public let total: Int?
 
-    public init(data: [Element], pagination: Pagination? = nil) {
+    public init(data: [Element], pagination: Pagination? = nil, total: Int? = nil) {
         self.data = data
         self.pagination = pagination
+        self.total = total
     }
 
     public var nextCursor: String? {

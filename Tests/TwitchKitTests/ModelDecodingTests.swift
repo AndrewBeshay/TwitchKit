@@ -408,6 +408,55 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(sub.isGift, true)
     }
 
+    // MARK: - TwitchStream
+
+    func test_decodeTwitchStream() throws {
+        let json = """
+        {
+            "id": "stream-1",
+            "user_id": "123",
+            "user_login": "twitchdev",
+            "user_name": "TwitchDev",
+            "game_id": "493057",
+            "game_name": "PUBG: BATTLEGROUNDS",
+            "type": "live",
+            "title": "Building TwitchKit",
+            "tags": ["Swift", "API"],
+            "viewer_count": 42,
+            "started_at": "2024-01-01T00:00:00Z",
+            "language": "en",
+            "thumbnail_url": "https://example.com/{width}x{height}.jpg",
+            "is_mature": false
+        }
+        """.data(using: .utf8)!
+
+        let stream = try JSONDecoder.twitch().decode(TwitchStream.self, from: json)
+
+        XCTAssertEqual(stream.userLogin, "twitchdev")
+        XCTAssertEqual(stream.tags, ["Swift", "API"])
+        XCTAssertEqual(stream.viewerCount, 42)
+        XCTAssertEqual(stream.language, "en")
+    }
+
+    // MARK: - TwitchGame
+
+    func test_decodeTwitchGame() throws {
+        let json = """
+        {
+            "id": "493057",
+            "name": "PUBG: BATTLEGROUNDS",
+            "box_art_url": "https://static-cdn.jtvnw.net/ttv-boxart/493057-{width}x{height}.jpg",
+            "igdb_id": "27789"
+        }
+        """.data(using: .utf8)!
+
+        let game = try JSONDecoder.twitch().decode(TwitchGame.self, from: json)
+
+        XCTAssertEqual(game.id, "493057")
+        XCTAssertEqual(game.name, "PUBG: BATTLEGROUNDS")
+        XCTAssertEqual(game.igdbId, "27789")
+    }
+
     // MARK: - HelixResponse
 
     func test_decodeHelixResponse() throws {
