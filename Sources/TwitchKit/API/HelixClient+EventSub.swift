@@ -74,6 +74,7 @@ extension HelixClient {
     ///   - version: Event version (e.g., `"1"`, `"2"`).
     ///   - condition: Event-specific condition fields (e.g., `broadcaster_user_id`, `user_id`).
     ///   - transport: The EventSub delivery transport.
+    ///   - isBatchingEnabled: Whether Twitch should batch compatible EventSub notifications.
     /// - Throws: `HelixError.badRequest` if the subscription fails.
     /// - SeeAlso: [Create EventSub Subscription](https://dev.twitch.tv/docs/api/reference/#create-eventsub-subscription)
     public func createEventSubSubscription(
@@ -113,6 +114,7 @@ extension HelixClient {
     ///   - version: Event version (e.g., `"1"`, `"2"`).
     ///   - condition: Event-specific condition fields (e.g., `broadcaster_user_id`, `user_id`).
     ///   - sessionId: WebSocket session ID from the `session_welcome` message.
+    ///   - isBatchingEnabled: Whether Twitch should batch compatible EventSub notifications.
     /// - Throws: `HelixError.badRequest` if the subscription fails.
     /// - SeeAlso: [Create EventSub Subscription](https://dev.twitch.tv/docs/api/reference/#create-eventsub-subscription)
     public func createEventSubSubscription(

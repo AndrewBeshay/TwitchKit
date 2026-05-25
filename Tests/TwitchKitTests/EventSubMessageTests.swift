@@ -295,4 +295,16 @@ final class EventSubMessageTests: XCTestCase {
         XCTAssertEqual(type, "channel.future")
         XCTAssertEqual(payload, data)
     }
+
+    func test_knownEventTypesDecodeToKnownFallbackWhenSpecificModelIsUnavailable() {
+        let payload = #"{"type":"known"}"#.data(using: .utf8)!
+
+        for type in EventSubKnownEventType.allCases {
+            let event = EventSubEvent.decode(type: type.rawValue, payload: payload)
+
+            if case .unknown(let unknownType, _) = event {
+                XCTFail("Expected \(unknownType) to decode as a known EventSub type")
+            }
+        }
+    }
 }

@@ -34,6 +34,7 @@ public enum EventSubEvent: Sendable {
     case warningAcknowledge(EventSubWarning)
     case warningSend(EventSubWarning)
     case revocation(EventSubRevocation)
+    case known(EventSubKnownEvent)
     case unknown(type: String, payload: Data)
 
     static func decode(type: String, payload data: Data, decoder: JSONDecoder = .twitch()) -> Self {
@@ -164,6 +165,9 @@ public enum EventSubEvent: Sendable {
             }
         default:
             break
+        }
+        if let knownType = EventSubKnownEventType(rawValue: type) {
+            return .known(EventSubKnownEvent(type: knownType, payload: data))
         }
         return .unknown(type: type, payload: data)
     }

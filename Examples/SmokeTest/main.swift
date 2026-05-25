@@ -240,6 +240,8 @@ struct TwitchKitSmokeTestCLI {
             "warning sent to \(warning.userName)"
         case .revocation(let revocation):
             "revocation: \(revocation.type) [\(revocation.status.rawValue)]"
+        case .known(let event):
+            "known EventSub event: \(event.type.rawValue)"
         case .unknown(let type, _):
             "unknown: \(type)"
         }

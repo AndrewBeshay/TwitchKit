@@ -9,6 +9,9 @@ let package = Package(
         .library(name: "TwitchKit", targets: ["TwitchKit"]),
         .executable(name: "TwitchKitSmokeTest", targets: ["TwitchKitSmokeTest"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.3.0"),
+    ],
     targets: [
         .target(
             name: "TwitchKit",
