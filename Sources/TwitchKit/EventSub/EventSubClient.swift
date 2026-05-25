@@ -110,7 +110,8 @@ public actor EventSubClient {
             type: subscription.type,
             version: subscription.version,
             condition: subscription.condition,
-            sessionId: sessionId
+            sessionId: sessionId,
+            isBatchingEnabled: subscription.isBatchingEnabled
         )
         logger.info("✅ EventSub: subscribed to \(subscription.type)")
     }

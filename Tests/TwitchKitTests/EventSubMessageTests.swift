@@ -195,6 +195,96 @@ final class EventSubMessageTests: XCTestCase {
         XCTAssertEqual(redemption.userInput, "Hydrate")
     }
 
+    func test_decodeTypedChatModerationEvents() throws {
+        let deleteJSON = """
+        {
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "target_user_id": "1234",
+            "target_user_login": "viewer",
+            "target_user_name": "Viewer",
+            "message_id": "message-id"
+        }
+        """.data(using: .utf8)!
+
+        let settingsJSON = """
+        {
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "emote_mode": false,
+            "follower_mode": true,
+            "follower_mode_duration_minutes": 10,
+            "slow_mode": true,
+            "slow_mode_wait_time_seconds": 30,
+            "subscriber_mode": false,
+            "unique_chat_mode": true
+        }
+        """.data(using: .utf8)!
+
+        let deleteEvent = EventSubEvent.decode(type: "channel.chat.message_delete", payload: deleteJSON)
+        let settingsEvent = EventSubEvent.decode(type: "channel.chat_settings.update", payload: settingsJSON)
+
+        guard case .chatMessageDelete(let delete) = deleteEvent else {
+            return XCTFail("Expected .chatMessageDelete")
+        }
+        XCTAssertEqual(delete.messageId, "message-id")
+
+        guard case .chatSettingsUpdate(let settings) = settingsEvent else {
+            return XCTFail("Expected .chatSettingsUpdate")
+        }
+        XCTAssertEqual(settings.slowModeWaitTimeSeconds, 30)
+        XCTAssertTrue(settings.uniqueChatMode)
+    }
+
+    func test_decodeTypedSubscriptionAndWarningEvents() throws {
+        let giftJSON = """
+        {
+            "user_id": null,
+            "user_login": null,
+            "user_name": null,
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "total": 5,
+            "tier": "1000",
+            "cumulative_total": 25,
+            "is_anonymous": true
+        }
+        """.data(using: .utf8)!
+
+        let warningJSON = """
+        {
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "moderator_user_id": "4242",
+            "moderator_user_login": "mod_user",
+            "moderator_user_name": "Mod_User",
+            "user_id": "1234",
+            "user_login": "viewer",
+            "user_name": "Viewer",
+            "reason": "Please follow chat rules"
+        }
+        """.data(using: .utf8)!
+
+        let giftEvent = EventSubEvent.decode(type: "channel.subscription.gift", payload: giftJSON)
+        let warningEvent = EventSubEvent.decode(type: "channel.warning.send", payload: warningJSON)
+
+        guard case .subscriptionGift(let gift) = giftEvent else {
+            return XCTFail("Expected .subscriptionGift")
+        }
+        XCTAssertEqual(gift.total, 5)
+        XCTAssertEqual(gift.tier, .tier1)
+
+        guard case .warningSend(let warning) = warningEvent else {
+            return XCTFail("Expected .warningSend")
+        }
+        XCTAssertEqual(warning.userName, "Viewer")
+        XCTAssertEqual(warning.reason, "Please follow chat rules")
+    }
+
     func test_unknownEventDecodeFallsBackToRawPayload() {
         let data = #"{"future":true}"#.data(using: .utf8)!
         let event = EventSubEvent.decode(type: "channel.future", payload: data)

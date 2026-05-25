@@ -204,6 +204,40 @@ struct TwitchKitSmokeTestCLI {
             "reward redemption add: \(redemption.reward.title) by \(redemption.userName)"
         case .channelPointsCustomRewardRedemptionUpdate(let redemption):
             "reward redemption update: \(redemption.reward.title) is \(redemption.status.rawValue)"
+        case .chatClear:
+            "chat cleared"
+        case .chatClearUserMessages(let event):
+            "chat messages cleared for \(event.targetUserName)"
+        case .chatMessageDelete(let event):
+            "chat message deleted: \(event.messageId)"
+        case .chatSettingsUpdate:
+            "chat settings updated"
+        case .subscriptionEnd(let subscription):
+            "subscription ended: \(subscription.userName)"
+        case .subscriptionGift(let gift):
+            "subscription gift: \(gift.total) gift(s)"
+        case .subscriptionMessage(let subscription):
+            "subscription message from \(subscription.userName)"
+        case .unbanRequestCreate(let request):
+            "unban request created by \(request.userName)"
+        case .unbanRequestResolve(let request):
+            "unban request resolved for \(request.userName)"
+        case .vipAdd(let vip):
+            "VIP added: \(vip.userName)"
+        case .vipRemove(let vip):
+            "VIP removed: \(vip.userName)"
+        case .shieldModeBegin:
+            "shield mode began"
+        case .shieldModeEnd:
+            "shield mode ended"
+        case .shoutoutCreate(let shoutout):
+            "shoutout created to \(shoutout.toBroadcasterUserName ?? "unknown")"
+        case .shoutoutReceive(let shoutout):
+            "shoutout received from \(shoutout.fromBroadcasterUserName ?? "unknown")"
+        case .warningAcknowledge(let warning):
+            "warning acknowledged by \(warning.userName)"
+        case .warningSend(let warning):
+            "warning sent to \(warning.userName)"
         case .revocation(let revocation):
             "revocation: \(revocation.type) [\(revocation.status.rawValue)]"
         case .unknown(let type, _):

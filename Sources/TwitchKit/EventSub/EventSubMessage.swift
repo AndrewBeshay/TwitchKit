@@ -16,6 +16,23 @@ public enum EventSubEvent: Sendable {
     case moderatorRemove(EventSubModeratorChange)
     case channelPointsCustomRewardRedemptionAdd(EventSubChannelPointsCustomRewardRedemption)
     case channelPointsCustomRewardRedemptionUpdate(EventSubChannelPointsCustomRewardRedemption)
+    case chatClear(EventSubChatClear)
+    case chatClearUserMessages(EventSubChatClearUserMessages)
+    case chatMessageDelete(EventSubChatMessageDelete)
+    case chatSettingsUpdate(EventSubChatSettingsUpdate)
+    case subscriptionEnd(EventSubSubscriptionEnd)
+    case subscriptionGift(EventSubSubscriptionGift)
+    case subscriptionMessage(EventSubSubscriptionMessage)
+    case unbanRequestCreate(EventSubUnbanRequest)
+    case unbanRequestResolve(EventSubUnbanRequest)
+    case vipAdd(EventSubVIPChange)
+    case vipRemove(EventSubVIPChange)
+    case shieldModeBegin(EventSubShieldMode)
+    case shieldModeEnd(EventSubShieldMode)
+    case shoutoutCreate(EventSubShoutout)
+    case shoutoutReceive(EventSubShoutout)
+    case warningAcknowledge(EventSubWarning)
+    case warningSend(EventSubWarning)
     case revocation(EventSubRevocation)
     case unknown(type: String, payload: Data)
 
@@ -76,6 +93,74 @@ public enum EventSubEvent: Sendable {
         case "channel.channel_points_custom_reward_redemption.update":
             if let event = try? decoder.decode(EventSubChannelPointsCustomRewardRedemption.self, from: data) {
                 return .channelPointsCustomRewardRedemptionUpdate(event)
+            }
+        case "channel.chat.clear":
+            if let event = try? decoder.decode(EventSubChatClear.self, from: data) {
+                return .chatClear(event)
+            }
+        case "channel.chat.clear_user_messages":
+            if let event = try? decoder.decode(EventSubChatClearUserMessages.self, from: data) {
+                return .chatClearUserMessages(event)
+            }
+        case "channel.chat.message_delete":
+            if let event = try? decoder.decode(EventSubChatMessageDelete.self, from: data) {
+                return .chatMessageDelete(event)
+            }
+        case "channel.chat_settings.update":
+            if let event = try? decoder.decode(EventSubChatSettingsUpdate.self, from: data) {
+                return .chatSettingsUpdate(event)
+            }
+        case "channel.subscription.end":
+            if let event = try? decoder.decode(EventSubSubscriptionEnd.self, from: data) {
+                return .subscriptionEnd(event)
+            }
+        case "channel.subscription.gift":
+            if let event = try? decoder.decode(EventSubSubscriptionGift.self, from: data) {
+                return .subscriptionGift(event)
+            }
+        case "channel.subscription.message":
+            if let event = try? decoder.decode(EventSubSubscriptionMessage.self, from: data) {
+                return .subscriptionMessage(event)
+            }
+        case "channel.unban_request.create":
+            if let event = try? decoder.decode(EventSubUnbanRequest.self, from: data) {
+                return .unbanRequestCreate(event)
+            }
+        case "channel.unban_request.resolve":
+            if let event = try? decoder.decode(EventSubUnbanRequest.self, from: data) {
+                return .unbanRequestResolve(event)
+            }
+        case "channel.vip.add":
+            if let event = try? decoder.decode(EventSubVIPChange.self, from: data) {
+                return .vipAdd(event)
+            }
+        case "channel.vip.remove":
+            if let event = try? decoder.decode(EventSubVIPChange.self, from: data) {
+                return .vipRemove(event)
+            }
+        case "channel.shield_mode.begin":
+            if let event = try? decoder.decode(EventSubShieldMode.self, from: data) {
+                return .shieldModeBegin(event)
+            }
+        case "channel.shield_mode.end":
+            if let event = try? decoder.decode(EventSubShieldMode.self, from: data) {
+                return .shieldModeEnd(event)
+            }
+        case "channel.shoutout.create":
+            if let event = try? decoder.decode(EventSubShoutout.self, from: data) {
+                return .shoutoutCreate(event)
+            }
+        case "channel.shoutout.receive":
+            if let event = try? decoder.decode(EventSubShoutout.self, from: data) {
+                return .shoutoutReceive(event)
+            }
+        case "channel.warning.acknowledge":
+            if let event = try? decoder.decode(EventSubWarning.self, from: data) {
+                return .warningAcknowledge(event)
+            }
+        case "channel.warning.send":
+            if let event = try? decoder.decode(EventSubWarning.self, from: data) {
+                return .warningSend(event)
             }
         default:
             break

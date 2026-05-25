@@ -924,6 +924,28 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(transportBody["secret"] as? String, "secret")
     }
 
+    func test_eventSubSubscriptionSupportsBatchingFlag() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 202, body: #"{"data":[]}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        try await api.createEventSubSubscription(
+            type: "drop.entitlement.grant",
+            version: "1",
+            condition: ["organization_id": "organization"],
+            transport: .webhook(callback: URL(string: "https://example.com/eventsub")!, secret: "secret"),
+            isBatchingEnabled: true
+        )
+
+        let request = try await firstRecordedRequest(from: transport)
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["is_batching_enabled"] as? Bool, true)
+    }
+
     func test_fetchEventSubSubscriptionsPageDecodesCostMetadataAndFilter() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 200, body: """

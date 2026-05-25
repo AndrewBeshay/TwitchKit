@@ -80,14 +80,16 @@ extension HelixClient {
         type: String,
         version: String,
         condition: [String: String],
-        transport: EventSubSubscriptionTransport
+        transport: EventSubSubscriptionTransport,
+        isBatchingEnabled: Bool? = nil
     ) async throws {
         try transport.validate()
         let payload = EventSubSubscriptionRequest(
             type: type,
             version: version,
             condition: condition,
-            transport: transport
+            transport: transport,
+            isBatchingEnabled: isBatchingEnabled
         )
         let bodyData = try JSONEncoder.twitch().encode(payload)
 
@@ -117,7 +119,8 @@ extension HelixClient {
         type: String,
         version: String,
         condition: [String: String],
-        sessionId: String
+        sessionId: String,
+        isBatchingEnabled: Bool? = nil
     ) async throws {
         guard !sessionId.isEmpty else {
             throw HelixError.badRequest(
@@ -129,7 +132,8 @@ extension HelixClient {
             type: type,
             version: version,
             condition: condition,
-            transport: .websocket(sessionID: sessionId)
+            transport: .websocket(sessionID: sessionId),
+            isBatchingEnabled: isBatchingEnabled
         )
     }
 }
@@ -139,4 +143,5 @@ private struct EventSubSubscriptionRequest: Encodable {
     let version: String
     let condition: [String: String]
     let transport: EventSubSubscriptionTransport
+    let isBatchingEnabled: Bool?
 }
