@@ -10,6 +10,7 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 
 - Grouped EventSub subscription factories for chat, channel, stream, moderation, and channel points domains.
 - Typed EventSub event payloads for channel updates, stream online/offline, raids, cheers, bans, unbans, moderator changes, and custom reward redemptions.
+- EventSub subscription listing, pagination, filtering, cost metadata, and deletion helpers.
 
 ## [0.1.0-alpha.2] - 2026-05-25
 

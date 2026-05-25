@@ -501,6 +501,121 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(transportBody["secret"] as? String, "secret")
     }
 
+    func test_fetchEventSubSubscriptionsPageDecodesCostMetadataAndFilter() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "total": 2,
+              "data": [
+                {
+                  "id": "subscription-1",
+                  "status": "enabled",
+                  "type": "stream.online",
+                  "version": "1",
+                  "condition": {
+                    "broadcaster_user_id": "1234"
+                  },
+                  "created_at": "2020-11-10T20:08:33.12345678Z",
+                  "transport": {
+                    "method": "websocket",
+                    "session_id": "session-id",
+                    "connected_at": "2020-11-10T20:08:30Z"
+                  },
+                  "cost": 1
+                }
+              ],
+              "total_cost": 1,
+              "max_total_cost": 10000,
+              "pagination": { "cursor": "next-cursor" }
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchEventSubSubscriptionsPage(
+            filter: .status(.enabled),
+            after: "cursor"
+        )
+
+        XCTAssertEqual(page.total, 2)
+        XCTAssertEqual(page.totalCost, 1)
+        XCTAssertEqual(page.maxTotalCost, 10000)
+        XCTAssertEqual(page.nextCursor, "next-cursor")
+        XCTAssertEqual(page.data.first?.id, "subscription-1")
+        XCTAssertEqual(page.data.first?.status, .enabled)
+        XCTAssertEqual(page.data.first?.transport.method, "websocket")
+        XCTAssertEqual(page.data.first?.transport.sessionId, "session-id")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled&after=cursor"
+        )
+    }
+
+    func test_fetchEventSubSubscriptionsPageSupportsSubscriptionFilter() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "total": 1,
+              "data": [
+                {
+                  "id": "subscription-1",
+                  "status": "webhook_callback_verification_pending",
+                  "type": "user.update",
+                  "version": "1",
+                  "condition": {
+                    "user_id": "1234"
+                  },
+                  "created_at": "2020-11-10T14:32:18.730260295Z",
+                  "transport": {
+                    "method": "webhook",
+                    "callback": "https://example.com/eventsub"
+                  },
+                  "cost": 0
+                }
+              ],
+              "pagination": {}
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchEventSubSubscriptionsPage(filter: .subscriptionID("subscription-1"))
+
+        XCTAssertEqual(page.data.first?.status, .webhookCallbackVerificationPending)
+        XCTAssertEqual(page.data.first?.transport.callback?.absoluteString, "https://example.com/eventsub")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/eventsub/subscriptions?subscription_id=subscription-1"
+        )
+    }
+
+    func test_deleteEventSubSubscriptionUsesDeleteMethodAndIdQuery() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 204, body: "")
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        try await api.deleteEventSubSubscription(id: "subscription-1")
+
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.httpMethod, "DELETE")
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/eventsub/subscriptions?id=subscription-1"
+        )
+    }
+
     func test_fetchChannelsInfoUsesRepeatedBroadcasterIDs() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 200, body: """

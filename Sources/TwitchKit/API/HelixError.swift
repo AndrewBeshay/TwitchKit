@@ -63,11 +63,21 @@ public struct HelixResponse<T: Decodable & Sendable>: Decodable, Sendable {
     public let data: [T]
     public let pagination: Pagination?
     public let total: Int?
+    public let totalCost: Int?
+    public let maxTotalCost: Int?
 
-    public init(data: [T], pagination: Pagination? = nil, total: Int? = nil) {
+    public init(
+        data: [T],
+        pagination: Pagination? = nil,
+        total: Int? = nil,
+        totalCost: Int? = nil,
+        maxTotalCost: Int? = nil
+    ) {
         self.data = data
         self.pagination = pagination
         self.total = total
+        self.totalCost = totalCost
+        self.maxTotalCost = maxTotalCost
     }
 
     public var page: HelixPage<T> {
