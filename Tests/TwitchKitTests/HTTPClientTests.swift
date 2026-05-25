@@ -362,6 +362,211 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(result.dropReason?.code, "automod_held")
     }
 
+    func test_fetchChattersPageUsesBroadcasterModeratorAndPagination() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                { "user_id": "1", "user_login": "viewer", "user_name": "Viewer" }
+              ],
+              "pagination": { "cursor": "next-cursor" }
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchChattersPage(
+            broadcasterID: "broadcaster",
+            moderatorID: "moderator",
+            first: 50,
+            after: "cursor"
+        )
+
+        XCTAssertEqual(page.data.first?.userLogin, "viewer")
+        let request = try await firstRecordedRequest(from: transport)
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/chat/chatters?broadcaster_id=broadcaster&moderator_id=moderator&first=50&after=cursor"
+        )
+    }
+
+    func test_updateChatSettingsEncodesOnlyProvidedFields() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "broadcaster_id": "broadcaster",
+                  "emote_mode": false,
+                  "follower_mode": true,
+                  "follower_mode_duration": 10,
+                  "slow_mode": true,
+                  "slow_mode_wait_time": 30,
+                  "subscriber_mode": false,
+                  "unique_chat_mode": false
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.updateChatSettings(
+            broadcasterID: "broadcaster",
+            moderatorID: "moderator",
+            with: ChatSettingsUpdate(slowMode: true, slowModeWaitTime: 30)
+        )
+
+        let request = try await firstRecordedRequest(from: transport)
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(request.httpMethod, "PATCH")
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/chat/settings?broadcaster_id=broadcaster&moderator_id=moderator"
+        )
+        XCTAssertEqual(object["slow_mode"] as? Bool, true)
+        XCTAssertEqual(object["slow_mode_wait_time"] as? Int, 30)
+        XCTAssertNil(object["subscriber_mode"])
+    }
+
+    func test_sendAnnouncementUsesQueryParametersAndJSONBody() async throws {
+        let transport = MockHTTPClient(responses: [.json(statusCode: 204, body: "")])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        try await api.sendChatAnnouncement(
+            broadcasterID: "broadcaster",
+            moderatorID: "moderator",
+            message: "hello",
+            color: .purple
+        )
+
+        let request = try await firstRecordedRequest(from: transport)
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/chat/announcements?broadcaster_id=broadcaster&moderator_id=moderator"
+        )
+        XCTAssertEqual(object["message"] as? String, "hello")
+        XCTAssertEqual(object["color"] as? String, "purple")
+    }
+
+    func test_banUserEncodesNestedDataBody() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "user_id": "target",
+                  "user_login": "targetlogin",
+                  "user_name": "Target",
+                  "expires_at": "2026-01-01T00:00:00Z",
+                  "created_at": "2025-01-01T00:00:00Z",
+                  "reason": "test",
+                  "moderator_id": "moderator",
+                  "moderator_login": "modlogin",
+                  "moderator_name": "Mod"
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.banUser(
+            broadcasterID: "broadcaster",
+            moderatorID: "moderator",
+            userID: "target",
+            duration: 60,
+            reason: "test"
+        )
+
+        let request = try await firstRecordedRequest(from: transport)
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let data = try XCTUnwrap(object["data"] as? [String: Any])
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/moderation/bans?broadcaster_id=broadcaster&moderator_id=moderator"
+        )
+        XCTAssertEqual(data["user_id"] as? String, "target")
+        XCTAssertEqual(data["duration"] as? Int, 60)
+        XCTAssertEqual(data["reason"] as? String, "test")
+    }
+
+    func test_fetchModeratorsPageUsesRepeatedUserIDs() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                { "user_id": "1", "user_login": "mod", "user_name": "Mod" }
+              ],
+              "pagination": {}
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.fetchModeratorsPage(broadcasterID: "broadcaster", userIDs: ["1", "2"])
+
+        let request = try await firstRecordedRequest(from: transport)
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/moderation/moderators?broadcaster_id=broadcaster&user_id=1&user_id=2"
+        )
+    }
+
+    func test_warnChatUserEncodesNestedDataBody() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "broadcaster_id": "broadcaster",
+                  "user_id": "target",
+                  "moderator_id": "moderator",
+                  "reason": "stop"
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.warnChatUser(
+            broadcasterID: "broadcaster",
+            moderatorID: "moderator",
+            userID: "target",
+            reason: "stop"
+        )
+
+        let request = try await firstRecordedRequest(from: transport)
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let data = try XCTUnwrap(object["data"] as? [String: Any])
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/moderation/warnings?broadcaster_id=broadcaster&moderator_id=moderator"
+        )
+        XCTAssertEqual(data["user_id"] as? String, "target")
+        XCTAssertEqual(data["reason"] as? String, "stop")
+    }
+
     func test_fetchUserRefreshesTokenAndRetriesOnceAfterUnauthorized() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 401, body: #"{"data":[]}"#),
@@ -1081,4 +1286,9 @@ private func makeAuth(
         ),
         tokenStore: InMemoryTokenStore()
     )
+}
+
+private func firstRecordedRequest(from transport: MockHTTPClient) async throws -> URLRequest {
+    let requests = await transport.recordedRequests()
+    return try XCTUnwrap(requests.first)
 }

@@ -6,6 +6,11 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 
 ## Unreleased
 
+### Added
+
+- Expanded Helix chat coverage for chatters, emote sets, user emotes, chat settings, shared chat sessions, announcements, shoutouts, pinned messages, and user chat colors.
+- Expanded Helix moderation coverage for AutoMod, bans/timeouts, unban requests, blocked terms, chat message deletion, moderated channels, moderators, VIPs, Shield Mode, warnings, and suspicious-user status.
+
 ## [0.1.0-alpha.3] - 2026-05-25
 
 ### Added

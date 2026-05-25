@@ -1,0 +1,632 @@
+import Foundation
+
+extension HelixClient {
+    /// Checks whether AutoMod would flag messages for review.
+    public func checkAutoModStatus(
+        broadcasterID: String,
+        messages: [AutoModMessage]
+    ) async throws -> [AutoModStatus] {
+        guard !messages.isEmpty else {
+            throw HelixError.badRequest(TwitchAPIError.fallback(status: 400, message: "At least one AutoMod message is required"))
+        }
+
+        let response: HelixResponse<AutoModStatus> = try await request(
+            endpoint: "moderation/enforcements/status",
+            method: "POST",
+            queryItems: [URLQueryItem(name: "broadcaster_id", value: broadcasterID)],
+            body: try JSONEncoder.twitch().encode(AutoModStatusRequest(data: messages))
+        )
+        return response.data
+    }
+
+    /// Allows or denies a message held by AutoMod.
+    public func manageHeldAutoModMessage(userID: String, messageID: String, action: HeldAutoModMessageAction) async throws {
+        try await requestNoContent(
+            endpoint: "moderation/automod/message",
+            method: "POST",
+            body: try JSONEncoder.twitch().encode(HeldAutoModMessageRequest(
+                userId: userID,
+                msgId: messageID,
+                action: action.rawValue
+            ))
+        )
+    }
+
+    /// Gets a broadcaster's AutoMod settings.
+    public func fetchAutoModSettings(broadcasterID: String, moderatorID: String) async throws -> AutoModSettings {
+        let response: HelixResponse<AutoModSettings> = try await request(
+            endpoint: "moderation/automod/settings",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ]
+        )
+        guard let settings = response.data.first else { throw HelixError.notFound }
+        return settings
+    }
+
+    /// Updates a broadcaster's AutoMod settings.
+    public func updateAutoModSettings(
+        broadcasterID: String,
+        moderatorID: String,
+        with update: AutoModSettingsUpdate
+    ) async throws -> AutoModSettings {
+        let response: HelixResponse<AutoModSettings> = try await request(
+            endpoint: "moderation/automod/settings",
+            method: "PUT",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ],
+            body: try JSONEncoder.twitch().encode(update)
+        )
+        guard let settings = response.data.first else { throw HelixError.notFound }
+        return settings
+    }
+
+    /// Gets one page of banned or timed-out users.
+    public func fetchBannedUsersPage(
+        broadcasterID: String,
+        userIDs: [String] = [],
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<BannedUser> {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterID)]
+        queryItems += HelixQuery.items("user_id", values: userIDs)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        let response: HelixResponse<BannedUser> = try await request(endpoint: "moderation/banned", queryItems: queryItems)
+        return response.page
+    }
+
+    /// Bans a user or puts them in a timeout.
+    public func banUser(
+        broadcasterID: String,
+        moderatorID: String,
+        userID: String,
+        duration: Int? = nil,
+        reason: String? = nil
+    ) async throws -> BannedUser {
+        let response: HelixResponse<BannedUser> = try await request(
+            endpoint: "moderation/bans",
+            method: "POST",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ],
+            body: try JSONEncoder.twitch().encode(BanUserRequest(data: BanUserRequest.DataBody(
+                userId: userID,
+                duration: duration,
+                reason: reason
+            )))
+        )
+        guard let bannedUser = response.data.first else { throw HelixError.notFound }
+        return bannedUser
+    }
+
+    /// Removes a ban or timeout from a user.
+    public func unbanUser(broadcasterID: String, moderatorID: String, userID: String) async throws {
+        try await requestNoContent(
+            endpoint: "moderation/bans",
+            method: "DELETE",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+                URLQueryItem(name: "user_id", value: userID),
+            ]
+        )
+    }
+
+    /// Gets one page of unban requests.
+    public func fetchUnbanRequestsPage(
+        broadcasterID: String,
+        moderatorID: String,
+        status: UnbanRequestStatusFilter,
+        userID: String? = nil,
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<UnbanRequest> {
+        var queryItems = [
+            URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+            URLQueryItem(name: "moderator_id", value: moderatorID),
+            URLQueryItem(name: "status", value: status.rawValue),
+        ]
+        HelixQuery.append(HelixQuery.item("user_id", userID), to: &queryItems)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+
+        let response: HelixResponse<UnbanRequest> = try await request(
+            endpoint: "moderation/unban_requests",
+            queryItems: queryItems
+        )
+        return response.page
+    }
+
+    /// Resolves an unban request.
+    public func resolveUnbanRequest(
+        broadcasterID: String,
+        moderatorID: String,
+        unbanRequestID: String,
+        status: UnbanRequestResolutionStatus
+    ) async throws -> UnbanRequest {
+        let response: HelixResponse<UnbanRequest> = try await request(
+            endpoint: "moderation/unban_requests",
+            method: "PATCH",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+                URLQueryItem(name: "unban_request_id", value: unbanRequestID),
+                URLQueryItem(name: "status", value: status.rawValue),
+            ]
+        )
+        guard let request = response.data.first else { throw HelixError.notFound }
+        return request
+    }
+
+    /// Gets one page of blocked terms.
+    public func fetchBlockedTermsPage(
+        broadcasterID: String,
+        moderatorID: String,
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<BlockedTerm> {
+        var queryItems = [
+            URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+            URLQueryItem(name: "moderator_id", value: moderatorID),
+        ]
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        let response: HelixResponse<BlockedTerm> = try await request(
+            endpoint: "moderation/blocked_terms",
+            queryItems: queryItems
+        )
+        return response.page
+    }
+
+    /// Adds a blocked term.
+    public func addBlockedTerm(broadcasterID: String, moderatorID: String, text: String) async throws -> BlockedTerm {
+        let response: HelixResponse<BlockedTerm> = try await request(
+            endpoint: "moderation/blocked_terms",
+            method: "POST",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ],
+            body: try JSONEncoder.twitch().encode(BlockedTermRequest(text: text))
+        )
+        guard let term = response.data.first else { throw HelixError.notFound }
+        return term
+    }
+
+    /// Removes a blocked term.
+    public func removeBlockedTerm(broadcasterID: String, moderatorID: String, id: String) async throws {
+        try await requestNoContent(
+            endpoint: "moderation/blocked_terms",
+            method: "DELETE",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+                URLQueryItem(name: "id", value: id),
+            ]
+        )
+    }
+
+    /// Deletes one chat message, or all chat messages when `messageID` is omitted.
+    public func deleteChatMessages(broadcasterID: String, moderatorID: String, messageID: String? = nil) async throws {
+        var queryItems = [
+            URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+            URLQueryItem(name: "moderator_id", value: moderatorID),
+        ]
+        HelixQuery.append(HelixQuery.item("message_id", messageID), to: &queryItems)
+        try await requestNoContent(endpoint: "moderation/chat", method: "DELETE", queryItems: queryItems)
+    }
+
+    /// Gets one page of channels moderated by a user.
+    public func fetchModeratedChannelsPage(
+        userID: String,
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<ModeratedChannel> {
+        var queryItems = [URLQueryItem(name: "user_id", value: userID)]
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        let response: HelixResponse<ModeratedChannel> = try await request(
+            endpoint: "moderation/channels",
+            queryItems: queryItems
+        )
+        return response.page
+    }
+
+    /// Gets one page of moderators for a broadcaster.
+    public func fetchModeratorsPage(
+        broadcasterID: String,
+        userIDs: [String] = [],
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<ModeratorUser> {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterID)]
+        queryItems += HelixQuery.items("user_id", values: userIDs)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        let response: HelixResponse<ModeratorUser> = try await request(endpoint: "moderation/moderators", queryItems: queryItems)
+        return response.page
+    }
+
+    /// Adds a channel moderator.
+    public func addChannelModerator(broadcasterID: String, userID: String) async throws {
+        try await requestNoContent(
+            endpoint: "moderation/moderators",
+            method: "POST",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "user_id", value: userID),
+            ]
+        )
+    }
+
+    /// Removes a channel moderator.
+    public func removeChannelModerator(broadcasterID: String, userID: String) async throws {
+        try await requestNoContent(
+            endpoint: "moderation/moderators",
+            method: "DELETE",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "user_id", value: userID),
+            ]
+        )
+    }
+
+    /// Gets one page of VIPs for a broadcaster.
+    public func fetchVIPsPage(
+        broadcasterID: String,
+        userIDs: [String] = [],
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<VIPUser> {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterID)]
+        queryItems += HelixQuery.items("user_id", values: userIDs)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        let response: HelixResponse<VIPUser> = try await request(endpoint: "channels/vips", queryItems: queryItems)
+        return response.page
+    }
+
+    /// Adds a channel VIP.
+    public func addChannelVIP(broadcasterID: String, userID: String) async throws {
+        try await requestNoContent(
+            endpoint: "channels/vips",
+            method: "POST",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "user_id", value: userID),
+            ]
+        )
+    }
+
+    /// Removes a channel VIP.
+    public func removeChannelVIP(broadcasterID: String, userID: String) async throws {
+        try await requestNoContent(
+            endpoint: "channels/vips",
+            method: "DELETE",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "user_id", value: userID),
+            ]
+        )
+    }
+
+    /// Gets Shield Mode status for a broadcaster.
+    public func fetchShieldModeStatus(broadcasterID: String, moderatorID: String) async throws -> ShieldModeStatus {
+        let response: HelixResponse<ShieldModeStatus> = try await request(
+            endpoint: "moderation/shield_mode",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ]
+        )
+        guard let status = response.data.first else { throw HelixError.notFound }
+        return status
+    }
+
+    /// Updates Shield Mode status for a broadcaster.
+    public func updateShieldModeStatus(
+        broadcasterID: String,
+        moderatorID: String,
+        isActive: Bool
+    ) async throws -> ShieldModeStatus {
+        let response: HelixResponse<ShieldModeStatus> = try await request(
+            endpoint: "moderation/shield_mode",
+            method: "PUT",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ],
+            body: try JSONEncoder.twitch().encode(ShieldModeStatusRequest(isActive: isActive))
+        )
+        guard let status = response.data.first else { throw HelixError.notFound }
+        return status
+    }
+
+    /// Warns a chat user.
+    public func warnChatUser(
+        broadcasterID: String,
+        moderatorID: String,
+        userID: String,
+        reason: String
+    ) async throws -> ChatWarning {
+        let response: HelixResponse<ChatWarning> = try await request(
+            endpoint: "moderation/warnings",
+            method: "POST",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ],
+            body: try JSONEncoder.twitch().encode(ChatWarningRequest(data: ChatWarningRequest.DataBody(
+                userId: userID,
+                reason: reason
+            )))
+        )
+        guard let warning = response.data.first else { throw HelixError.notFound }
+        return warning
+    }
+
+    /// Adds suspicious-user status to a chat user.
+    public func addSuspiciousUserStatus(
+        broadcasterID: String,
+        moderatorID: String,
+        userID: String,
+        status: SuspiciousUserStatus
+    ) async throws -> SuspiciousUserAction {
+        let response: HelixResponse<SuspiciousUserAction> = try await request(
+            endpoint: "moderation/suspicious_users",
+            method: "POST",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ],
+            body: try JSONEncoder.twitch().encode(SuspiciousUserStatusRequest(userId: userID, status: status.rawValue))
+        )
+        guard let action = response.data.first else { throw HelixError.notFound }
+        return action
+    }
+
+    /// Removes suspicious-user status from a chat user.
+    public func removeSuspiciousUserStatus(
+        broadcasterID: String,
+        moderatorID: String,
+        userID: String
+    ) async throws -> SuspiciousUserAction {
+        let response: HelixResponse<SuspiciousUserAction> = try await request(
+            endpoint: "moderation/suspicious_users",
+            method: "DELETE",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+                URLQueryItem(name: "user_id", value: userID),
+            ]
+        )
+        guard let action = response.data.first else { throw HelixError.notFound }
+        return action
+    }
+}
+
+private struct AutoModStatusRequest: Encodable {
+    let data: [AutoModMessage]
+}
+
+private struct HeldAutoModMessageRequest: Encodable {
+    let userId: String
+    let msgId: String
+    let action: String
+}
+
+private struct BanUserRequest: Encodable {
+    let data: DataBody
+
+    struct DataBody: Encodable {
+        let userId: String
+        let duration: Int?
+        let reason: String?
+    }
+}
+
+private struct BlockedTermRequest: Encodable {
+    let text: String
+}
+
+private struct ShieldModeStatusRequest: Encodable {
+    let isActive: Bool
+}
+
+private struct ChatWarningRequest: Encodable {
+    let data: DataBody
+
+    struct DataBody: Encodable {
+        let userId: String
+        let reason: String
+    }
+}
+
+private struct SuspiciousUserStatusRequest: Encodable {
+    let userId: String
+    let status: String
+}
+
+/// A message to check with AutoMod.
+public struct AutoModMessage: Encodable, Sendable, Equatable {
+    public let msgId: String
+    public let msgText: String
+
+    public init(msgId: String, msgText: String) {
+        self.msgId = msgId
+        self.msgText = msgText
+    }
+}
+
+/// AutoMod's decision for a checked message.
+public struct AutoModStatus: Decodable, Sendable, Equatable {
+    public let msgId: String
+    public let isPermitted: Bool
+}
+
+/// Action to apply to a held AutoMod message.
+public enum HeldAutoModMessageAction: String, Sendable, Equatable {
+    case allow = "ALLOW"
+    case deny = "DENY"
+}
+
+/// A broadcaster's AutoMod settings.
+public struct AutoModSettings: Codable, Sendable, Equatable {
+    public let broadcasterId: String
+    public let moderatorId: String
+    public let overallLevel: Int?
+    public let disability: Int
+    public let aggression: Int
+    public let sexualitySexOrGender: Int
+    public let misogyny: Int
+    public let bullying: Int
+    public let swearing: Int
+    public let raceEthnicityOrReligion: Int
+    public let sexBasedTerms: Int
+}
+
+/// Request body for updating AutoMod settings.
+public struct AutoModSettingsUpdate: Encodable, Sendable, Equatable {
+    public let overallLevel: Int?
+    public let disability: Int?
+    public let aggression: Int?
+    public let sexualitySexOrGender: Int?
+    public let misogyny: Int?
+    public let bullying: Int?
+    public let swearing: Int?
+    public let raceEthnicityOrReligion: Int?
+    public let sexBasedTerms: Int?
+
+    public init(
+        overallLevel: Int? = nil,
+        disability: Int? = nil,
+        aggression: Int? = nil,
+        sexualitySexOrGender: Int? = nil,
+        misogyny: Int? = nil,
+        bullying: Int? = nil,
+        swearing: Int? = nil,
+        raceEthnicityOrReligion: Int? = nil,
+        sexBasedTerms: Int? = nil
+    ) {
+        self.overallLevel = overallLevel
+        self.disability = disability
+        self.aggression = aggression
+        self.sexualitySexOrGender = sexualitySexOrGender
+        self.misogyny = misogyny
+        self.bullying = bullying
+        self.swearing = swearing
+        self.raceEthnicityOrReligion = raceEthnicityOrReligion
+        self.sexBasedTerms = sexBasedTerms
+    }
+}
+
+/// A banned or timed-out user.
+public struct BannedUser: Decodable, Sendable, Equatable {
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let expiresAt: String?
+    public let createdAt: Date
+    public let reason: String
+    public let moderatorId: String
+    public let moderatorLogin: String
+    public let moderatorName: String
+}
+
+/// Filter status for unban requests.
+public enum UnbanRequestStatusFilter: String, Sendable, Equatable {
+    case pending
+    case approved
+    case denied
+    case acknowledged
+    case canceled
+}
+
+/// Resolution status for an unban request.
+public enum UnbanRequestResolutionStatus: String, Sendable, Equatable {
+    case approved
+    case denied
+}
+
+/// An unban request.
+public struct UnbanRequest: Decodable, Sendable, Equatable {
+    public let id: String
+    public let broadcasterId: String
+    public let broadcasterLogin: String
+    public let broadcasterName: String
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let text: String
+    public let status: String
+    public let createdAt: Date
+    public let resolvedAt: Date?
+    public let resolutionText: String?
+    public let moderatorId: String?
+    public let moderatorLogin: String?
+    public let moderatorName: String?
+}
+
+/// A blocked term.
+public struct BlockedTerm: Decodable, Sendable, Equatable {
+    public let broadcasterId: String
+    public let moderatorId: String
+    public let id: String
+    public let text: String
+    public let createdAt: Date
+    public let updatedAt: Date
+    public let expiresAt: Date?
+}
+
+/// A channel moderated by a user.
+public struct ModeratedChannel: Decodable, Sendable, Equatable {
+    public let broadcasterId: String
+    public let broadcasterLogin: String
+    public let broadcasterName: String
+}
+
+/// A moderator user.
+public struct ModeratorUser: Decodable, Sendable, Equatable {
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+}
+
+/// A VIP user.
+public struct VIPUser: Decodable, Sendable, Equatable {
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+}
+
+/// Shield Mode status for a broadcaster.
+public struct ShieldModeStatus: Decodable, Sendable, Equatable {
+    public let isActive: Bool
+    public let moderatorId: String
+    public let moderatorName: String
+    public let moderatorLogin: String
+    public let lastActivatedAt: Date
+}
+
+/// A warning applied to a chat user.
+public struct ChatWarning: Decodable, Sendable, Equatable {
+    public let broadcasterId: String
+    public let userId: String
+    public let moderatorId: String
+    public let reason: String
+}
+
+/// Suspicious-user status values accepted by Twitch.
+public enum SuspiciousUserStatus: String, Sendable, Equatable {
+    case activeMonitoring = "ACTIVE_MONITORING"
+    case restricted = "RESTRICTED"
+}
+
+/// Result of applying or removing suspicious-user status.
+public struct SuspiciousUserAction: Decodable, Sendable, Equatable {
+    public let userId: String
+    public let broadcasterId: String
+    public let moderatorId: String
+    public let updatedAt: Date
+    public let status: String
+    public let types: [String]
+}
