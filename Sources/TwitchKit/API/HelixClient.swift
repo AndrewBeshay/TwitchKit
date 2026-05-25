@@ -74,6 +74,28 @@ public struct HelixClient: Sendable {
         )
     }
 
+    private func pagedRequest<T: Decodable & Sendable>(
+        endpoint: String,
+        queryItems: [URLQueryItem]? = nil,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<T> {
+        HelixPagedSequence { cursor in
+            var pagedQueryItems = queryItems ?? []
+            if let pageSize {
+                pagedQueryItems.append(URLQueryItem(name: "first", value: String(pageSize)))
+            }
+            if let cursor {
+                pagedQueryItems.append(URLQueryItem(name: "after", value: cursor))
+            }
+
+            let response: HelixResponse<T> = try await request(
+                endpoint: endpoint,
+                queryItems: pagedQueryItems.isEmpty ? nil : pagedQueryItems
+            )
+            return response.page
+        }
+    }
+
     private func sendAuthenticatedRequest(
         endpoint: String,
         method: String = "GET",
@@ -308,6 +330,70 @@ public struct HelixClient: Sendable {
             isBrandedContent: isBrandedContent
         )
         try await updateChannelInfo(forBroadcasterID: broadcasterId, with: update)
+    }
+
+    // MARK: - Follows
+
+    /// Gets one page of users who follow the specified broadcaster.
+    ///
+    /// Requires `moderator:read:followers` scope.
+    ///
+    /// - Parameters:
+    ///   - broadcasterId: The broadcaster's user ID.
+    ///   - userId: Optional user ID to check whether a specific user follows the broadcaster.
+    ///   - first: Optional page size. Twitch currently allows up to 100.
+    ///   - cursor: Optional cursor returned by a previous page.
+    /// - Returns: A page of followers and the next pagination cursor, if any.
+    /// - SeeAlso: [Get Channel Followers](https://dev.twitch.tv/docs/api/reference/#get-channel-followers)
+    public func fetchChannelFollowersPage(
+        forBroadcasterID broadcasterId: String,
+        userID userId: String? = nil,
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<TwitchFollow> {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterId)]
+        if let userId {
+            queryItems.append(URLQueryItem(name: "user_id", value: userId))
+        }
+        if let first {
+            queryItems.append(URLQueryItem(name: "first", value: String(first)))
+        }
+        if let cursor {
+            queryItems.append(URLQueryItem(name: "after", value: cursor))
+        }
+
+        let response: HelixResponse<TwitchFollow> = try await request(
+            endpoint: "channels/followers",
+            queryItems: queryItems
+        )
+        return response.page
+    }
+
+    /// Returns an async sequence of users who follow the specified broadcaster.
+    ///
+    /// Requires `moderator:read:followers` scope.
+    ///
+    /// - Parameters:
+    ///   - broadcasterId: The broadcaster's user ID.
+    ///   - userId: Optional user ID to check whether a specific user follows the broadcaster.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Channel Followers](https://dev.twitch.tv/docs/api/reference/#get-channel-followers)
+    public func channelFollowers(
+        forBroadcasterID broadcasterId: String,
+        userID userId: String? = nil,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<TwitchFollow> {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterId)]
+        if let userId {
+            queryItems.append(URLQueryItem(name: "user_id", value: userId))
+        }
+
+        return pagedRequest(
+            endpoint: "channels/followers",
+            queryItems: queryItems,
+            pageSize: pageSize
+        )
     }
 
     // MARK: - Emotes

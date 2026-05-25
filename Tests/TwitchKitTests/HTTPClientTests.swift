@@ -187,6 +187,96 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.absoluteString, "https://api.twitch.tv/helix/eventsub/subscriptions")
     }
+
+    func test_fetchChannelFollowersPageReturnsPaginationCursor() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "total": 2,
+              "data": [
+                {
+                  "user_id": "1",
+                  "user_login": "viewer1",
+                  "user_name": "Viewer1",
+                  "followed_at": "2024-01-01T00:00:00Z"
+                }
+              ],
+              "pagination": { "cursor": "next-cursor" }
+            }
+            """)
+        ])
+        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "followers-page")
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchChannelFollowersPage(
+            forBroadcasterID: "broadcaster-id",
+            first: 1
+        )
+
+        XCTAssertEqual(page.data.map(\.userName), ["Viewer1"])
+        XCTAssertEqual(page.nextCursor, "next-cursor")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/channels/followers?broadcaster_id=broadcaster-id&first=1"
+        )
+    }
+
+    func test_channelFollowersSequenceFetchesNextPageUsingCursor() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "total": 2,
+              "data": [
+                {
+                  "user_id": "1",
+                  "user_login": "viewer1",
+                  "user_name": "Viewer1",
+                  "followed_at": "2024-01-01T00:00:00Z"
+                }
+              ],
+              "pagination": { "cursor": "next-cursor" }
+            }
+            """),
+            .json(statusCode: 200, body: """
+            {
+              "total": 2,
+              "data": [
+                {
+                  "user_id": "2",
+                  "user_login": "viewer2",
+                  "user_name": "Viewer2",
+                  "followed_at": "2024-01-02T00:00:00Z"
+                }
+              ],
+              "pagination": {}
+            }
+            """),
+        ])
+        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "followers-sequence")
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        var followers: [String] = []
+        for try await follower in api.channelFollowers(forBroadcasterID: "broadcaster-id", pageSize: 1) {
+            followers.append(follower.userName)
+        }
+
+        XCTAssertEqual(followers, ["Viewer1", "Viewer2"])
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(
+            requests[0].url?.absoluteString,
+            "https://api.twitch.tv/helix/channels/followers?broadcaster_id=broadcaster-id&first=1"
+        )
+        XCTAssertEqual(
+            requests[1].url?.absoluteString,
+            "https://api.twitch.tv/helix/channels/followers?broadcaster_id=broadcaster-id&first=1&after=next-cursor"
+        )
+    }
 }
 
 actor MockHTTPClient: HTTPClient {
