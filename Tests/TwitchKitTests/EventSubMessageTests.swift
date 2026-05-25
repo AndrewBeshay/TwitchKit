@@ -88,4 +88,120 @@ final class EventSubMessageTests: XCTestCase {
             XCTFail("Expected .unknown case")
         }
     }
+
+    func test_decodeTypedStreamOnlineEvent() throws {
+        let json = """
+        {
+            "id": "9001",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "type": "live",
+            "started_at": "2020-10-11T10:11:12.123Z"
+        }
+        """.data(using: .utf8)!
+
+        let event = EventSubEvent.decode(type: "stream.online", payload: json)
+
+        guard case .streamOnline(let stream) = event else {
+            return XCTFail("Expected .streamOnline")
+        }
+        XCTAssertEqual(stream.id, "9001")
+        XCTAssertEqual(stream.broadcasterUserId, "1337")
+        XCTAssertEqual(stream.type, "live")
+    }
+
+    func test_decodeTypedChannelUpdateEvent() throws {
+        let json = """
+        {
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "title": "Best Stream Ever",
+            "language": "en",
+            "category_id": "21779",
+            "category_name": "Fortnite",
+            "content_classification_labels": ["MatureGame"]
+        }
+        """.data(using: .utf8)!
+
+        let event = EventSubEvent.decode(type: "channel.update", payload: json)
+
+        guard case .channelUpdate(let update) = event else {
+            return XCTFail("Expected .channelUpdate")
+        }
+        XCTAssertEqual(update.title, "Best Stream Ever")
+        XCTAssertEqual(update.categoryName, "Fortnite")
+        XCTAssertEqual(update.contentClassificationLabels, ["MatureGame"])
+    }
+
+    func test_decodeTypedModerationAndChannelPointsEvents() throws {
+        let banJSON = """
+        {
+            "user_id": "1234",
+            "user_login": "bad_user",
+            "user_name": "Bad_User",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "moderator_user_id": "4242",
+            "moderator_user_login": "mod_user",
+            "moderator_user_name": "Mod_User",
+            "reason": "Breaking the rules",
+            "banned_at": "2020-07-15T18:16:11.17106713Z",
+            "ends_at": null,
+            "is_permanent": true
+        }
+        """.data(using: .utf8)!
+
+        let redemptionJSON = """
+        {
+            "id": "redemption-id",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "user_id": "9001",
+            "user_login": "viewer",
+            "user_name": "Viewer",
+            "user_input": "Hydrate",
+            "status": "unfulfilled",
+            "reward": {
+                "id": "reward-id",
+                "title": "Hydrate",
+                "prompt": "Drink water",
+                "cost": 100
+            },
+            "redeemed_at": "2020-07-15T17:16:03.17106713Z"
+        }
+        """.data(using: .utf8)!
+
+        let banEvent = EventSubEvent.decode(type: "channel.ban", payload: banJSON)
+        let redemptionEvent = EventSubEvent.decode(
+            type: "channel.channel_points_custom_reward_redemption.add",
+            payload: redemptionJSON
+        )
+
+        guard case .ban(let ban) = banEvent else {
+            return XCTFail("Expected .ban")
+        }
+        XCTAssertTrue(ban.isPermanent)
+        XCTAssertEqual(ban.reason, "Breaking the rules")
+
+        guard case .channelPointsCustomRewardRedemptionAdd(let redemption) = redemptionEvent else {
+            return XCTFail("Expected .channelPointsCustomRewardRedemptionAdd")
+        }
+        XCTAssertEqual(redemption.reward.title, "Hydrate")
+        XCTAssertEqual(redemption.userInput, "Hydrate")
+    }
+
+    func test_unknownEventDecodeFallsBackToRawPayload() {
+        let data = #"{"future":true}"#.data(using: .utf8)!
+        let event = EventSubEvent.decode(type: "channel.future", payload: data)
+
+        guard case .unknown(let type, let payload) = event else {
+            return XCTFail("Expected .unknown")
+        }
+        XCTAssertEqual(type, "channel.future")
+        XCTAssertEqual(payload, data)
+    }
 }

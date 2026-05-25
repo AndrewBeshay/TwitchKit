@@ -52,6 +52,29 @@ final class APIDesignTests: XCTestCase {
         XCTAssertEqual(subscription.condition["user_id"], "user")
     }
 
+    func test_eventSubFactoriesAreGroupedByDomain() {
+        let channelUpdate = EventSubSubscription.Channel.update(broadcasterID: "broadcaster")
+        XCTAssertEqual(channelUpdate.type, "channel.update")
+        XCTAssertEqual(channelUpdate.version, "2")
+        XCTAssertEqual(channelUpdate.condition["broadcaster_user_id"], "broadcaster")
+
+        let raid = EventSubSubscription.Channel.raid(toBroadcasterID: "target")
+        XCTAssertEqual(raid.type, "channel.raid")
+        XCTAssertEqual(raid.condition["to_broadcaster_user_id"], "target")
+
+        let redemption = EventSubSubscription.ChannelPoints.customRewardRedemptionAdd(
+            broadcasterID: "broadcaster",
+            rewardID: "reward"
+        )
+        XCTAssertEqual(redemption.type, "channel.channel_points_custom_reward_redemption.add")
+        XCTAssertEqual(redemption.condition["broadcaster_user_id"], "broadcaster")
+        XCTAssertEqual(redemption.condition["reward_id"], "reward")
+
+        let streamOnline = EventSubSubscription.Stream.online(broadcasterID: "broadcaster")
+        XCTAssertEqual(streamOnline.type, "stream.online")
+        XCTAssertEqual(streamOnline.condition["broadcaster_user_id"], "broadcaster")
+    }
+
     func test_chatMessageClosedDomainStringsDecodeKnownAndUnknownValues() throws {
         let known = try JSONDecoder.twitch().decode(ChatMessageType.self, from: Data(#""text""#.utf8))
         let unknown = try JSONDecoder.twitch().decode(ChatMessageType.self, from: Data(#""future_type""#.utf8))

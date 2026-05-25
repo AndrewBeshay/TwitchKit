@@ -187,24 +187,7 @@ public actor EventSubClient {
     }
 
     private func parseEvent(type: String, data: Data) -> EventSubEvent {
-        let decoder = JSONDecoder.twitch()
-        switch type {
-        case "channel.chat.message":
-            if let msg = try? decoder.decode(ChatMessage.self, from: data) {
-                return .chatMessage(msg)
-            }
-        case "channel.follow":
-            if let follow = try? decoder.decode(TwitchFollow.self, from: data) {
-                return .follow(follow)
-            }
-        case "channel.subscribe":
-            if let sub = try? decoder.decode(TwitchSubscription.self, from: data) {
-                return .subscription(sub)
-            }
-        default:
-            break
-        }
-        return .unknown(type: type, payload: data)
+        EventSubEvent.decode(type: type, payload: data)
     }
 
     // MARK: - Keepalive
