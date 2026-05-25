@@ -35,11 +35,22 @@ public enum EventSubSubscriptionFilter: Sendable, Equatable {
 
 /// A page of EventSub subscriptions plus account-level cost metadata.
 public struct EventSubSubscriptionsPage: Sendable, Equatable {
+    /// EventSub subscriptions on this page.
     public let data: [EventSubSubscriptionRecord]
+
+    /// Cursor pagination information, when more pages are available.
     public let pagination: Pagination?
+
+    /// Total number of matching subscriptions, when Twitch includes it.
     public let total: Int?
+
+    /// Total cost of active EventSub subscriptions for the authenticated client.
     public let totalCost: Int?
+
+    /// Maximum EventSub subscription cost allowed for the authenticated client.
     public let maxTotalCost: Int?
+
+    /// HTTP metadata attached by `HelixClient`.
     public let metadata: HelixResponseMetadata?
 
     public init(
@@ -58,6 +69,7 @@ public struct EventSubSubscriptionsPage: Sendable, Equatable {
         self.metadata = metadata
     }
 
+    /// Cursor used to fetch the next page.
     public var nextCursor: String? {
         pagination?.cursor
     }

@@ -1,5 +1,6 @@
 import Foundation
 
+/// Errors returned by TwitchKit's Helix and OAuth helpers.
 public enum HelixError: Error, Sendable, LocalizedError {
     // Auth
     case unauthorized
@@ -60,6 +61,13 @@ public struct HelixRateLimit: Sendable, Equatable {
     /// A direct retry delay, when a response includes a retry header.
     public let retryAfter: Int?
 
+    /// Creates rate-limit metadata from Twitch response headers.
+    ///
+    /// - Parameters:
+    ///   - limit: Value from `Ratelimit-Limit`, if present.
+    ///   - remaining: Value from `Ratelimit-Remaining`, if present.
+    ///   - resetAt: Time from `Ratelimit-Reset`, if present.
+    ///   - retryAfter: Value from `Retry-After`, if present.
     public init(limit: Int? = nil, remaining: Int? = nil, resetAt: Date? = nil, retryAfter: Int? = nil) {
         self.limit = limit
         self.remaining = remaining
@@ -87,6 +95,11 @@ public struct HelixResponseMetadata: Sendable, Equatable {
     /// Rate-limit metadata returned with the response, when present.
     public let rateLimit: HelixRateLimit
 
+    /// Creates response metadata for a Helix HTTP response.
+    ///
+    /// - Parameters:
+    ///   - statusCode: The HTTP status code returned by Twitch.
+    ///   - rateLimit: Rate-limit metadata parsed from Twitch response headers.
     public init(statusCode: Int, rateLimit: HelixRateLimit = HelixRateLimit()) {
         self.statusCode = statusCode
         self.rateLimit = rateLimit
@@ -111,12 +124,26 @@ public struct TwitchAPIError: Decodable, Sendable, Equatable {
 }
 
 /// Response wrapper for Helix endpoints.
+///
+/// The `metadata` property is populated for responses returned by `HelixClient`.
+/// It is `nil` when decoding this type directly from JSON.
 public struct HelixResponse<T: Decodable & Sendable>: Decodable, Sendable {
+    /// Items returned in Twitch's top-level `data` array.
     public let data: [T]
+
+    /// Cursor pagination information, when the endpoint is paginated.
     public let pagination: Pagination?
+
+    /// Total number of matching items, when Twitch includes a total.
     public let total: Int?
+
+    /// Total EventSub subscription cost, when returned by Twitch.
     public let totalCost: Int?
+
+    /// Maximum EventSub subscription cost allowed, when returned by Twitch.
     public let maxTotalCost: Int?
+
+    /// HTTP metadata attached by `HelixClient`.
     public let metadata: HelixResponseMetadata?
 
     public init(
@@ -158,9 +185,14 @@ public struct HelixResponse<T: Decodable & Sendable>: Decodable, Sendable {
     }
 }
 
+/// Cursor pagination returned by Twitch Helix endpoints.
 public struct Pagination: Decodable, Sendable, Equatable {
+    /// Cursor used to request the next page.
     public let cursor: String?
 
+    /// Creates pagination metadata.
+    ///
+    /// - Parameter cursor: Cursor used to request the next page.
     public init(cursor: String?) {
         self.cursor = cursor
     }
@@ -168,9 +200,16 @@ public struct Pagination: Decodable, Sendable, Equatable {
 
 /// A single page of elements returned by a paginated Helix endpoint.
 public struct HelixPage<Element: Sendable>: Sendable {
+    /// Items on this page.
     public let data: [Element]
+
+    /// Cursor pagination information, when more pages are available.
     public let pagination: Pagination?
+
+    /// Total number of matching items, when Twitch includes a total.
     public let total: Int?
+
+    /// HTTP metadata attached by `HelixClient`.
     public let metadata: HelixResponseMetadata?
 
     public init(
@@ -185,6 +224,7 @@ public struct HelixPage<Element: Sendable>: Sendable {
         self.metadata = metadata
     }
 
+    /// Cursor used to fetch the next page.
     public var nextCursor: String? {
         pagination?.cursor
     }
@@ -207,10 +247,12 @@ public struct HelixPagedSequence<Element: Sendable>: AsyncSequence, Sendable {
         self.fetchPage = fetchPage
     }
 
+    /// Creates an iterator for the paged sequence.
     public func makeAsyncIterator() -> Iterator {
         Iterator(nextCursor: initialCursor, fetchPage: fetchPage)
     }
 
+    /// Iterator for a `HelixPagedSequence`.
     public struct Iterator: AsyncIteratorProtocol {
         private var buffer: [Element] = []
         private var nextCursor: String?
@@ -225,6 +267,7 @@ public struct HelixPagedSequence<Element: Sendable>: AsyncSequence, Sendable {
             self.fetchPage = fetchPage
         }
 
+        /// Returns the next element, fetching another page when needed.
         public mutating func next() async throws -> Element? {
             while buffer.isEmpty {
                 guard shouldFetchPage else {

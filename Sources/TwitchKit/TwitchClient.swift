@@ -1,13 +1,33 @@
 import Foundation
 
-/// Top-level facade for TwitchKit. Holds auth, API client, and EventSub client.
-/// Sendable — safe to pass across actor boundaries. NOT @Observable.
+/// Top-level TwitchKit facade.
+///
+/// `TwitchClient` wires together OAuth/token storage, Helix HTTP APIs, and EventSub WebSocket APIs.
 public final class TwitchClient: Sendable {
+    /// Twitch application client ID used for Helix and OAuth requests.
     public let clientId: String
+
+    /// OAuth and token-management helper.
     public let auth: TwitchAuth
+
+    /// Helix HTTP API client.
     public let api: HelixClient
+
+    /// EventSub WebSocket client.
     public let eventSub: EventSubClient
 
+    /// Creates a TwitchKit client with shared auth, Helix, and EventSub components.
+    ///
+    /// - Parameters:
+    ///   - clientId: Twitch application client ID.
+    ///   - clientSecret: Optional Twitch application client secret for flows that require it.
+    ///   - tokenNamespace: Optional namespace for the default keychain token store.
+    ///   - tokenStore: Optional custom token store. Use this when a host app owns persistence.
+    ///   - httpClient: HTTP transport used for OAuth and Helix requests.
+    ///   - requestConfiguration: Request-level behavior for Helix HTTP calls.
+    ///   - retryPolicy: Automatic retry behavior for Helix HTTP calls.
+    ///   - responseMetadataHandler: Optional callback invoked with metadata from successful Helix responses.
+    ///   - isLive: Returns whether the channel is live, used to tune EventSub reconnect behavior.
     public init(
         clientId: String,
         clientSecret: String? = nil,

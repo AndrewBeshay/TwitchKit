@@ -6,6 +6,8 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 
 ## Unreleased
 
+## [0.1.0-alpha.3] - 2026-05-25
+
 ### Added
 
 - Grouped EventSub subscription factories for chat, channel, stream, moderation, and channel points domains.
@@ -18,6 +20,10 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 - Successful Helix page responses and optional client callbacks now expose response metadata.
 - Configurable Helix request timeouts and cancellation-preserving network error handling.
 - EventSub connection timeout cleanup and reconnect cancellation when disconnecting.
+
+### Changed
+
+- Public documentation comments for newer Helix metadata, retry, timeout, and facade APIs.
 
 ## [0.1.0-alpha.2] - 2026-05-25
 

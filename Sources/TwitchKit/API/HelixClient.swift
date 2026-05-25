@@ -3,6 +3,7 @@ import os
 
 private let logger = Logger(subsystem: "com.twitchkit", category: "helix")
 
+/// Client for Twitch Helix HTTP endpoints.
 public struct HelixClient: Sendable {
     private let tokenProvider: any TwitchAccessTokenProvider
     private let clientId: String
@@ -273,7 +274,7 @@ public struct HelixClient: Sendable {
 
 /// Request-level configuration for Helix HTTP calls.
 public struct HelixRequestConfiguration: Sendable, Equatable {
-    /// Default Helix request configuration.
+    /// Uses a 30-second request timeout.
     public static let `default` = Self(timeoutInterval: 30)
 
     /// Leaves URLSession's default timeout behavior unchanged.
@@ -282,6 +283,10 @@ public struct HelixRequestConfiguration: Sendable, Equatable {
     /// The timeout, in seconds, assigned to each Helix `URLRequest`.
     public let timeoutInterval: TimeInterval?
 
+    /// Creates request-level configuration for Helix HTTP calls.
+    ///
+    /// - Parameter timeoutInterval: Timeout, in seconds, assigned to each `URLRequest`.
+    ///   Pass `nil` to leave URLSession's default timeout unchanged.
     public init(timeoutInterval: TimeInterval? = 30) {
         self.timeoutInterval = timeoutInterval
     }
@@ -295,8 +300,12 @@ public struct HelixRetryPolicy: Sendable, Equatable {
     /// Disables automatic retry behavior.
     public static let never = Self(retryServiceUnavailableOnce: false)
 
+    /// Whether TwitchKit retries one HTTP 503 response before returning an error.
     public let retryServiceUnavailableOnce: Bool
 
+    /// Creates a retry policy for Helix requests.
+    ///
+    /// - Parameter retryServiceUnavailableOnce: Whether to retry one HTTP 503 response.
     public init(retryServiceUnavailableOnce: Bool = true) {
         self.retryServiceUnavailableOnce = retryServiceUnavailableOnce
     }
