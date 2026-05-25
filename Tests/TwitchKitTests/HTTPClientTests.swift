@@ -147,6 +147,46 @@ final class HTTPClientTests: XCTestCase {
             XCTAssertEqual(apiError.message, "Missing broadcaster_id")
         }
     }
+
+    func test_updateChannelInfoAcceptsNoContentResponse() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 204, body: "")
+        ])
+        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "update-channel")
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        try await api.updateChannelInfo(
+            forBroadcasterID: "broadcaster-id",
+            with: ChannelInfoUpdate(title: "New title")
+        )
+
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.httpMethod, "PATCH")
+        XCTAssertEqual(request.url?.absoluteString, "https://api.twitch.tv/helix/channels?broadcaster_id=broadcaster-id")
+    }
+
+    func test_eventSubSubscriptionAcceptsAcceptedResponse() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 202, body: #"{"data":[]}"#)
+        ])
+        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "eventsub-create")
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        try await api.createEventSubSubscription(
+            type: "channel.chat.message",
+            version: "1",
+            condition: ["broadcaster_user_id": "broadcaster-id", "user_id": "user-id"],
+            sessionId: "session-id"
+        )
+
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.absoluteString, "https://api.twitch.tv/helix/eventsub/subscriptions")
+    }
 }
 
 actor MockHTTPClient: HTTPClient {

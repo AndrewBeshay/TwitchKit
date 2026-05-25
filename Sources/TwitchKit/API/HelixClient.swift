@@ -24,6 +24,62 @@ public struct HelixClient: Sendable {
         queryItems: [URLQueryItem]? = nil,
         body: Data? = nil
     ) async throws -> HelixResponse<T> {
+        let response = try await sendAuthenticatedRequest(
+            endpoint: endpoint,
+            method: method,
+            queryItems: queryItems,
+            body: body
+        )
+        return try decodeHelixResponse(T.self, from: response.data, response: response.httpResponse)
+    }
+
+    private func requestNoContent(
+        endpoint: String,
+        method: String,
+        queryItems: [URLQueryItem]? = nil,
+        body: Data? = nil
+    ) async throws {
+        let response = try await sendAuthenticatedRequest(
+            endpoint: endpoint,
+            method: method,
+            queryItems: queryItems,
+            body: body
+        )
+        try validateSuccess(
+            data: response.data,
+            response: response.httpResponse,
+            acceptedStatusCodes: [204],
+            fallbackMessage: "No content response expected"
+        )
+    }
+
+    private func requestAccepted(
+        endpoint: String,
+        method: String,
+        queryItems: [URLQueryItem]? = nil,
+        body: Data? = nil,
+        fallbackMessage: String
+    ) async throws {
+        let response = try await sendAuthenticatedRequest(
+            endpoint: endpoint,
+            method: method,
+            queryItems: queryItems,
+            body: body
+        )
+        try validateSuccess(
+            data: response.data,
+            response: response.httpResponse,
+            acceptedStatusCodes: [202],
+            fallbackMessage: fallbackMessage
+        )
+    }
+
+    private func sendAuthenticatedRequest(
+        endpoint: String,
+        method: String = "GET",
+        queryItems: [URLQueryItem]? = nil,
+        body: Data? = nil
+    ) async throws -> HelixHTTPResponse {
         var components = URLComponents(string: Self.baseURL + endpoint)!
         components.queryItems = queryItems
 
@@ -54,10 +110,10 @@ public struct HelixClient: Sendable {
                 guard let retryHttp = retryResponse as? HTTPURLResponse else {
                     throw HelixError.invalidResponse
                 }
-                return try handleResponse(data: retryData, response: retryHttp)
+                return HelixHTTPResponse(data: retryData, httpResponse: retryHttp)
             }
 
-            return try handleResponse(data: data, response: httpResponse)
+            return HelixHTTPResponse(data: data, httpResponse: httpResponse)
         } catch let error as HelixError {
             throw error
         } catch {
@@ -65,28 +121,53 @@ public struct HelixClient: Sendable {
         }
     }
 
-    private func handleResponse<T: Decodable & Sendable>(data: Data, response: HTTPURLResponse) throws -> HelixResponse<T> {
+    private func decodeHelixResponse<T: Decodable & Sendable>(
+        _ type: T.Type,
+        from data: Data,
+        response: HTTPURLResponse
+    ) throws -> HelixResponse<T> {
+        try validateSuccess(
+            data: data,
+            response: response,
+            acceptedStatusCodes: [200, 202],
+            fallbackMessage: "Helix response expected"
+        )
+
+        do {
+            return try JSONDecoder.twitch().decode(HelixResponse<T>.self, from: data)
+        } catch {
+            let rawJSON = String(data: data.prefix(500), encoding: .utf8) ?? "non-utf8"
+            logger.error("Helix decode failed for \(String(describing: type)): \(error) — JSON: \(rawJSON)")
+            throw HelixError.decodingFailed(error.localizedDescription)
+        }
+    }
+
+    private func validateSuccess(
+        data: Data,
+        response: HTTPURLResponse,
+        acceptedStatusCodes: Set<Int>,
+        fallbackMessage: String
+    ) throws {
+        if acceptedStatusCodes.contains(response.statusCode) {
+            return
+        }
+        try throwError(data: data, response: response, fallbackMessage: fallbackMessage)
+    }
+
+    private func throwError(data: Data, response: HTTPURLResponse, fallbackMessage: String) throws -> Never {
         switch response.statusCode {
-        case 200, 202:
-            do {
-                return try JSONDecoder.twitch().decode(HelixResponse<T>.self, from: data)
-            } catch {
-                let rawJSON = String(data: data.prefix(500), encoding: .utf8) ?? "non-utf8"
-                logger.error("Helix decode failed for \(String(describing: T.self)): \(error) — JSON: \(rawJSON)")
-                throw HelixError.decodingFailed(error.localizedDescription)
-            }
         case 400:
-            throw HelixError.badRequest(apiError(from: data, status: response.statusCode, fallbackMessage: "Bad request"))
+            throw HelixError.badRequest(apiError(from: data, status: response.statusCode, fallbackMessage: fallbackMessage))
         case 401:
             throw HelixError.unauthorized
         case 403:
-            throw HelixError.forbidden(apiError(from: data, status: response.statusCode, fallbackMessage: "Forbidden"))
+            throw HelixError.forbidden(apiError(from: data, status: response.statusCode, fallbackMessage: fallbackMessage))
         case 404:
             throw HelixError.notFound
         case 409:
-            throw HelixError.conflict(apiError(from: data, status: response.statusCode, fallbackMessage: "Conflict"))
+            throw HelixError.conflict(apiError(from: data, status: response.statusCode, fallbackMessage: fallbackMessage))
         case 422:
-            throw HelixError.unprocessable(apiError(from: data, status: response.statusCode, fallbackMessage: "Unprocessable"))
+            throw HelixError.unprocessable(apiError(from: data, status: response.statusCode, fallbackMessage: fallbackMessage))
         case 429:
             throw HelixError.rateLimited(retryAfter: retryAfter(from: response) ?? 60)
         default:
@@ -198,44 +279,12 @@ public struct HelixClient: Sendable {
     public func updateChannelInfo(forBroadcasterID broadcasterId: String, with update: ChannelInfoUpdate) async throws {
         let bodyData = try JSONEncoder.twitch().encode(update)
 
-        // PATCH /channels returns 204 No Content — handle directly, not via generic request
-        var components = URLComponents(string: Self.baseURL + "channels")!
-        components.queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterId)]
-
-        var urlRequest = URLRequest(url: components.url!)
-        urlRequest.httpMethod = "PATCH"
-        urlRequest.httpBody = bodyData
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let token = try await auth.accessToken()
-        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        urlRequest.setValue(clientId, forHTTPHeaderField: "Client-Id")
-
-        let (data, response) = try await httpClient.data(for: urlRequest)
-        guard let http = response as? HTTPURLResponse else {
-            throw HelixError.invalidResponse
-        }
-
-        switch http.statusCode {
-        case 204:
-            return // Success — no content
-        case 400:
-            throw HelixError.badRequest(apiError(from: data, status: http.statusCode, fallbackMessage: "Bad request"))
-        case 401:
-            throw HelixError.unauthorized
-        case 403:
-            throw HelixError.forbidden(apiError(from: data, status: http.statusCode, fallbackMessage: "Forbidden"))
-        case 409:
-            throw HelixError.conflict(
-                apiError(
-                    from: data,
-                    status: http.statusCode,
-                    fallbackMessage: "Branded content flag changed too frequently"
-                )
-            )
-        default:
-            throw HelixError.serverError(status: http.statusCode)
-        }
+        try await requestNoContent(
+            endpoint: "channels",
+            method: "PATCH",
+            queryItems: [URLQueryItem(name: "broadcaster_id", value: broadcasterId)],
+            body: bodyData
+        )
     }
 
     @available(*, deprecated, renamed: "updateChannelInfo(forBroadcasterID:with:)")
@@ -416,36 +465,23 @@ public struct HelixClient: Sendable {
         )
         let bodyData = try JSONEncoder.twitch().encode(payload)
 
-        // Custom URLRequest — EventSub response shape differs from standard Helix
-        let components = URLComponents(string: Self.baseURL + "eventsub/subscriptions")!
-        var urlRequest = URLRequest(url: components.url!)
-        urlRequest.httpMethod = "POST"
-        urlRequest.httpBody = bodyData
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let token = try await auth.accessToken()
-        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        urlRequest.setValue(clientId, forHTTPHeaderField: "Client-Id")
-
-        let (data, response) = try await httpClient.data(for: urlRequest)
-        guard let http = response as? HTTPURLResponse else {
-            throw HelixError.invalidResponse
-        }
-
-        guard http.statusCode == 202 else {
-            if let errorResponse = try? JSONDecoder.twitch().decode(TwitchAPIError.self, from: data) {
-                logger.error("EventSub subscribe failed for \(type): \(errorResponse.message)")
-                throw HelixError.badRequest(errorResponse)
-            }
-            logger.error("EventSub subscribe failed for \(type): HTTP \(http.statusCode)")
-            throw HelixError.serverError(status: http.statusCode)
-        }
+        try await requestAccepted(
+            endpoint: "eventsub/subscriptions",
+            method: "POST",
+            body: bodyData,
+            fallbackMessage: "EventSub subscription failed"
+        )
     }
 }
 
 // MARK: - Internal Types
 
 // MARK: - Internal Response Types
+
+private struct HelixHTTPResponse: Sendable {
+    let data: Data
+    let httpResponse: HTTPURLResponse
+}
 
 private struct StreamKeyResponse: Decodable, Sendable {
     let streamKey: String
