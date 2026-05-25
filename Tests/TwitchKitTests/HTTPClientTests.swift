@@ -1232,6 +1232,140 @@ final class HTTPClientTests: XCTestCase {
             "https://api.twitch.tv/helix/channels/followers?broadcaster_id=broadcaster-id&first=1&after=next-cursor"
         )
     }
+
+    func test_groupTwoHelixEndpointsUseExpectedPathsAndQueries() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: "BEGIN:VCALENDAR"),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.fetchFollowedChannelsPage(forUserID: "user", broadcasterID: "broadcaster", first: 10, after: "cursor")
+        _ = try await api.fetchChannelEditors(forBroadcasterID: "broadcaster")
+        _ = try await api.fetchContentClassificationLabels(locale: "en-US")
+        _ = try await api.fetchSearchChannelsPage(query: "swift", liveOnly: true, first: 5)
+        _ = try await api.fetchChannelICalendar(forBroadcasterID: "broadcaster")
+        _ = try await api.fetchCharityCampaign(forBroadcasterID: "broadcaster")
+        _ = try await api.fetchHypeTrainStatus(forBroadcasterID: "broadcaster")
+
+        let urls = await transport.recordedRequests().map { $0.url?.absoluteString }
+        XCTAssertEqual(urls[0], "https://api.twitch.tv/helix/channels/followed?user_id=user&broadcaster_id=broadcaster&first=10&after=cursor")
+        XCTAssertEqual(urls[1], "https://api.twitch.tv/helix/channels/editors?broadcaster_id=broadcaster")
+        XCTAssertEqual(urls[2], "https://api.twitch.tv/helix/content_classification_labels?locale=en-US")
+        XCTAssertEqual(urls[3], "https://api.twitch.tv/helix/search/channels?query=swift&live_only=true&first=5")
+        XCTAssertEqual(urls[4], "https://api.twitch.tv/helix/schedule/icalendar?broadcaster_id=broadcaster")
+        XCTAssertEqual(urls[5], "https://api.twitch.tv/helix/charity/campaigns?broadcaster_id=broadcaster")
+        XCTAssertEqual(urls[6], "https://api.twitch.tv/helix/hypetrain/status?broadcaster_id=broadcaster")
+    }
+
+    func test_creatorHelixEndpointsUseExpectedPathsAndQueries() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 204, body: ""),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+            .json(statusCode: 200, body: #"{"data":[]}"#),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.fetchPollsPage(broadcasterID: "broadcaster", ids: ["poll"], first: 1)
+        _ = try await api.fetchPredictionsPage(broadcasterID: "broadcaster", ids: ["prediction"], after: "cursor")
+        try await api.cancelRaid(broadcasterID: "broadcaster")
+        _ = try await api.fetchStreamMarkersPage(userID: "user", first: 2)
+        _ = try await api.fetchCreatorGoals(forBroadcasterID: "broadcaster")
+        _ = try await api.fetchCustomRewards(broadcasterID: "broadcaster", ids: ["reward"], onlyManageableRewards: true)
+        _ = try await api.fetchBroadcasterSubscriptionsPage(broadcasterID: "broadcaster", userIDs: ["user"])
+        _ = try await api.fetchClipsPage(broadcasterID: "broadcaster", first: 3)
+        _ = try await api.fetchClipDownloads(broadcasterID: "broadcaster", editorID: "editor", clipIDs: ["clip"])
+        _ = try await api.fetchVideosPage(userID: "user", type: "archive", first: 4)
+
+        let urls = await transport.recordedRequests().map { $0.url?.absoluteString }
+        XCTAssertEqual(urls[0], "https://api.twitch.tv/helix/polls?broadcaster_id=broadcaster&id=poll&first=1")
+        XCTAssertEqual(urls[1], "https://api.twitch.tv/helix/predictions?broadcaster_id=broadcaster&id=prediction&after=cursor")
+        XCTAssertEqual(urls[2], "https://api.twitch.tv/helix/raids?broadcaster_id=broadcaster")
+        XCTAssertEqual(urls[3], "https://api.twitch.tv/helix/streams/markers?user_id=user&first=2")
+        XCTAssertEqual(urls[4], "https://api.twitch.tv/helix/goals?broadcaster_id=broadcaster")
+        XCTAssertEqual(urls[5], "https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id=broadcaster&id=reward&only_manageable_rewards=true")
+        XCTAssertEqual(urls[6], "https://api.twitch.tv/helix/subscriptions?broadcaster_id=broadcaster&user_id=user")
+        XCTAssertEqual(urls[7], "https://api.twitch.tv/helix/clips?broadcaster_id=broadcaster&first=3")
+        XCTAssertEqual(urls[8], "https://api.twitch.tv/helix/clips/downloads?broadcaster_id=broadcaster&editor_id=editor&clip_id=clip")
+        XCTAssertEqual(urls[9], "https://api.twitch.tv/helix/videos?user_id=user&type=archive&first=4")
+    }
+
+    func test_scheduleAndPollRequestsEncodeTypedBodies() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 204, body: ""),
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "id": "poll",
+                  "broadcaster_id": "broadcaster",
+                  "broadcaster_login": "streamer",
+                  "broadcaster_name": "Streamer",
+                  "title": "Question?",
+                  "choices": [{ "id": "choice", "title": "Yes", "votes": 0, "channel_points_votes": 0, "bits_votes": 0 }],
+                  "bits_voting_enabled": false,
+                  "bits_per_vote": 0,
+                  "channel_points_voting_enabled": false,
+                  "channel_points_per_vote": 0,
+                  "status": "ACTIVE",
+                  "duration": 60,
+                  "started_at": "2024-01-01T00:00:00Z"
+                }
+              ]
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+        let date = Date(timeIntervalSince1970: 1_704_067_200)
+
+        try await api.updateChannelStreamSchedule(
+            forBroadcasterID: "broadcaster",
+            with: ChannelStreamScheduleSettingsUpdate(
+                isVacationEnabled: true,
+                vacationStartTime: date,
+                vacationEndTime: date,
+                timezone: "Australia/Sydney"
+            )
+        )
+        _ = try await api.createPoll(
+            PollCreateRequest(
+                broadcasterId: "broadcaster",
+                title: "Question?",
+                choices: [PollChoice(title: "Yes")],
+                duration: 60
+            )
+        )
+
+        let requests = await transport.recordedRequests()
+        let scheduleBody = try XCTUnwrap(requests[0].httpBody)
+        let scheduleObject = try XCTUnwrap(JSONSerialization.jsonObject(with: scheduleBody) as? [String: Any])
+        XCTAssertEqual(scheduleObject["is_vacation_enabled"] as? Bool, true)
+        XCTAssertEqual(scheduleObject["timezone"] as? String, "Australia/Sydney")
+        XCTAssertTrue((scheduleObject["vacation_start_time"] as? String)?.contains("T") == true)
+
+        let pollBody = try XCTUnwrap(requests[1].httpBody)
+        let pollObject = try XCTUnwrap(JSONSerialization.jsonObject(with: pollBody) as? [String: Any])
+        XCTAssertEqual(pollObject["broadcaster_id"] as? String, "broadcaster")
+        XCTAssertEqual(pollObject["duration"] as? Int, 60)
+    }
 }
 
 actor MockHTTPClient: HTTPClient {

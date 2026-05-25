@@ -120,6 +120,101 @@ extension HelixClient {
             pageSize: pageSize
         )
     }
+
+    /// Gets one page of broadcasters followed by the specified user.
+    ///
+    /// - Parameters:
+    ///   - userId: The user's ID.
+    ///   - broadcasterId: Optional broadcaster ID used to check a specific follow relationship.
+    ///   - first: Optional page size. Twitch currently allows up to 100.
+    ///   - cursor: Optional cursor returned by a previous page.
+    /// - Returns: A page of followed channels.
+    /// - SeeAlso: [Get Followed Channels](https://dev.twitch.tv/docs/api/reference/#get-followed-channels)
+    public func fetchFollowedChannelsPage(
+        forUserID userId: String,
+        broadcasterID broadcasterId: String? = nil,
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<FollowedChannel> {
+        var queryItems = [URLQueryItem(name: "user_id", value: userId)]
+        HelixQuery.append(HelixQuery.item("broadcaster_id", broadcasterId), to: &queryItems)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+
+        let response: HelixResponse<FollowedChannel> = try await request(
+            endpoint: "channels/followed",
+            queryItems: queryItems
+        )
+        return response.page
+    }
+
+    /// Returns an async sequence of broadcasters followed by the specified user.
+    ///
+    /// - Parameters:
+    ///   - userId: The user's ID.
+    ///   - broadcasterId: Optional broadcaster ID used to check a specific follow relationship.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Followed Channels](https://dev.twitch.tv/docs/api/reference/#get-followed-channels)
+    public func followedChannels(
+        forUserID userId: String,
+        broadcasterID broadcasterId: String? = nil,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<FollowedChannel> {
+        var queryItems = [URLQueryItem(name: "user_id", value: userId)]
+        HelixQuery.append(HelixQuery.item("broadcaster_id", broadcasterId), to: &queryItems)
+
+        return pagedRequest(
+            endpoint: "channels/followed",
+            queryItems: queryItems,
+            pageSize: pageSize
+        )
+    }
+
+    /// Gets users who can edit the broadcaster's channel information.
+    ///
+    /// - Parameter broadcasterId: The broadcaster's user ID.
+    /// - Returns: Channel editors.
+    /// - SeeAlso: [Get Channel Editors](https://dev.twitch.tv/docs/api/reference/#get-channel-editors)
+    public func fetchChannelEditors(forBroadcasterID broadcasterId: String) async throws -> [ChannelEditor] {
+        let response: HelixResponse<ChannelEditor> = try await request(
+            endpoint: "channels/editors",
+            queryItems: [URLQueryItem(name: "broadcaster_id", value: broadcasterId)]
+        )
+        return response.data
+    }
+
+    /// Gets Twitch content classification labels.
+    ///
+    /// - Parameter locale: Optional BCP-47 locale string such as `"en-US"`.
+    /// - Returns: Content classification labels.
+    /// - SeeAlso: [Get Content Classification Labels](https://dev.twitch.tv/docs/api/reference/#get-content-classification-labels)
+    public func fetchContentClassificationLabels(locale: String? = nil) async throws -> [TwitchContentClassificationLabel] {
+        let queryItems = locale.map { [URLQueryItem(name: "locale", value: $0)] }
+        let response: HelixResponse<TwitchContentClassificationLabel> = try await request(
+            endpoint: "content_classification_labels",
+            queryItems: queryItems
+        )
+        return response.data
+    }
+}
+
+public struct FollowedChannel: Decodable, Sendable, Equatable {
+    public let broadcasterId: String
+    public let broadcasterLogin: String
+    public let broadcasterName: String
+    public let followedAt: Date
+}
+
+public struct ChannelEditor: Decodable, Sendable, Equatable {
+    public let userId: String
+    public let userName: String
+    public let createdAt: Date
+}
+
+public struct TwitchContentClassificationLabel: Decodable, Sendable, Equatable {
+    public let id: String
+    public let description: String
+    public let name: String
 }
 
 /// A content classification label to enable or disable on a channel.

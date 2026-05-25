@@ -83,6 +83,29 @@ public struct HelixClient: Sendable {
         )
     }
 
+    func requestRawData(
+        endpoint: String,
+        method: String = "GET",
+        queryItems: [URLQueryItem]? = nil,
+        body: Data? = nil,
+        acceptedStatusCodes: Set<Int> = [200],
+        fallbackMessage: String = "Helix response expected"
+    ) async throws -> Data {
+        let response = try await sendAuthenticatedRequest(
+            endpoint: endpoint,
+            method: method,
+            queryItems: queryItems,
+            body: body
+        )
+        _ = try validateSuccess(
+            data: response.data,
+            response: response.httpResponse,
+            acceptedStatusCodes: acceptedStatusCodes,
+            fallbackMessage: fallbackMessage
+        )
+        return response.data
+    }
+
     func requestAccepted(
         endpoint: String,
         method: String,

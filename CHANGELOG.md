@@ -13,6 +13,7 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 - Expanded EventSub subscription factories across chat, subscriptions, moderation, channel points, polls, predictions, goals, Hype Train, charity, user, and whisper events.
 - Typed EventSub payload decoding for key chat moderation, subscription lifecycle, unban request, VIP, Shield Mode, shoutout, and warning events.
 - EventSub subscription creation now supports Twitch's batching flag for Drop entitlement subscriptions.
+- Expanded Helix creator and channel-management coverage for followed channels, editors, content classification labels, search, schedules, charity, Hype Train, polls, predictions, raids, stream markers, goals, channel points rewards, subscriptions, clips, and videos.
 
 ## [0.1.0-alpha.3] - 2026-05-25
 
