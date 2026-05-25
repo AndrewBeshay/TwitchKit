@@ -3,6 +3,12 @@ import Foundation
 import TwitchKit
 
 @main
+private enum SmokeTestMain {
+    static func main() async {
+        await TwitchKitSmokeTestCLI.main()
+    }
+}
+
 struct TwitchKitSmokeTestCLI {
     static func main() async {
         do {
