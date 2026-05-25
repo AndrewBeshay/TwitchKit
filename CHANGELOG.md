@@ -14,6 +14,7 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 - Forward-compatible `RawRepresentable` enums for Twitch stream types, EventSub transport methods, EventSub subscription statuses, chat domains, and channel points redemption statuses.
 - Local validation for EventSub subscription management calls that would otherwise be rejected by Twitch.
 - `TwitchKitSmokeTest` executable target for live Twitch API, EventSub, chat, and cleanup smoke checks.
+- Typed Helix rate-limit metadata and configurable retry policy for Twitch's recommended 503 retry.
 
 ## [0.1.0-alpha.2] - 2026-05-25
 

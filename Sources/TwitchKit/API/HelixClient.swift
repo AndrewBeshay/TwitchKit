@@ -7,21 +7,29 @@ public struct HelixClient: Sendable {
     private let tokenProvider: any TwitchAccessTokenProvider
     private let clientId: String
     private let httpClient: any HTTPClient
+    private let retryPolicy: HelixRetryPolicy
 
     private static let baseURL = "https://api.twitch.tv/helix/"
 
     public init(
         tokenProvider: any TwitchAccessTokenProvider,
         clientId: String,
-        httpClient: any HTTPClient = URLSessionHTTPClient()
+        httpClient: any HTTPClient = URLSessionHTTPClient(),
+        retryPolicy: HelixRetryPolicy = .default
     ) {
         self.tokenProvider = tokenProvider
         self.clientId = clientId
         self.httpClient = httpClient
+        self.retryPolicy = retryPolicy
     }
 
-    public init(auth: TwitchAuth, clientId: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
-        self.init(tokenProvider: auth, clientId: clientId, httpClient: httpClient)
+    public init(
+        auth: TwitchAuth,
+        clientId: String,
+        httpClient: any HTTPClient = URLSessionHTTPClient(),
+        retryPolicy: HelixRetryPolicy = .default
+    ) {
+        self.init(tokenProvider: auth, clientId: clientId, httpClient: httpClient, retryPolicy: retryPolicy)
     }
 
     func request<T: Decodable & Sendable>(
@@ -135,6 +143,15 @@ public struct HelixClient: Sendable {
                 return HelixHTTPResponse(data: retryData, httpResponse: retryHttp)
             }
 
+            if retryPolicy.shouldRetryServiceUnavailable, httpResponse.statusCode == 503 {
+                logger.warning("Helix \(endpoint) returned 503; retrying once")
+                let (retryData, retryResponse) = try await httpClient.data(for: urlRequest)
+                guard let retryHttp = retryResponse as? HTTPURLResponse else {
+                    throw HelixError.invalidResponse
+                }
+                return HelixHTTPResponse(data: retryData, httpResponse: retryHttp)
+            }
+
             return HelixHTTPResponse(data: data, httpResponse: httpResponse)
         } catch let error as HelixError {
             throw error
@@ -191,7 +208,7 @@ public struct HelixClient: Sendable {
         case 422:
             throw HelixError.unprocessable(apiError(from: data, status: response.statusCode, fallbackMessage: fallbackMessage))
         case 429:
-            throw HelixError.rateLimited(retryAfter: retryAfter(from: response) ?? 60)
+            throw HelixError.rateLimited(rateLimit(from: response))
         default:
             throw HelixError.serverError(status: response.statusCode)
         }
@@ -202,8 +219,36 @@ public struct HelixClient: Sendable {
             ?? TwitchAPIError.fallback(status: status, message: fallbackMessage)
     }
 
-    private func retryAfter(from response: HTTPURLResponse) -> Int? {
-        response.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init)
+    private func rateLimit(from response: HTTPURLResponse) -> HelixRateLimit {
+        HelixRateLimit(
+            limit: intHeader("Ratelimit-Limit", from: response),
+            remaining: intHeader("Ratelimit-Remaining", from: response),
+            resetAt: intHeader("Ratelimit-Reset", from: response).map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            retryAfter: intHeader("Retry-After", from: response)
+        )
+    }
+
+    private func intHeader(_ field: String, from response: HTTPURLResponse) -> Int? {
+        response.value(forHTTPHeaderField: field).flatMap(Int.init)
+    }
+}
+
+/// Controls automatic retries for Helix requests.
+public struct HelixRetryPolicy: Sendable, Equatable {
+    /// Retries one HTTP 503 response, matching Twitch's API health guidance.
+    public static let `default` = Self(retryServiceUnavailableOnce: true)
+
+    /// Disables automatic retry behavior.
+    public static let never = Self(retryServiceUnavailableOnce: false)
+
+    public let retryServiceUnavailableOnce: Bool
+
+    public init(retryServiceUnavailableOnce: Bool = true) {
+        self.retryServiceUnavailableOnce = retryServiceUnavailableOnce
+    }
+
+    var shouldRetryServiceUnavailable: Bool {
+        retryServiceUnavailableOnce
     }
 }
 

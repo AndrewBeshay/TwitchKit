@@ -384,12 +384,19 @@ final class HTTPClientTests: XCTestCase {
         }
     }
 
-    func test_rateLimitUsesRetryAfterHeader() async throws {
+    func test_rateLimitPreservesRateLimitHeaders() async throws {
+        let resetAt = Date.now.addingTimeInterval(30)
+        let resetEpoch = Int(resetAt.timeIntervalSince1970)
         let transport = MockHTTPClient(responses: [
             .json(
                 statusCode: 429,
                 body: #"{"error":"Too Many Requests","status":429,"message":"Rate limit exceeded"}"#,
-                headers: ["Retry-After": "17"]
+                headers: [
+                    "Ratelimit-Limit": "800",
+                    "Ratelimit-Remaining": "0",
+                    "Ratelimit-Reset": "\(resetEpoch)",
+                    "Retry-After": "17",
+                ]
             )
         ])
         let auth = makeAuth()
@@ -400,11 +407,97 @@ final class HTTPClientTests: XCTestCase {
             _ = try await api.fetchUser()
             XCTFail("Expected rate limit error")
         } catch let error as HelixError {
-            guard case .rateLimited(let retryAfter) = error else {
+            guard case .rateLimited(let rateLimit) = error else {
                 return XCTFail("Expected rateLimited, got \(error)")
             }
-            XCTAssertEqual(retryAfter, 17)
+            XCTAssertEqual(rateLimit.limit, 800)
+            XCTAssertEqual(rateLimit.remaining, 0)
+            XCTAssertEqual(rateLimit.resetAt, Date(timeIntervalSince1970: TimeInterval(resetEpoch)))
+            XCTAssertEqual(rateLimit.retryAfter, 17)
+            XCTAssertEqual(rateLimit.recommendedRetryDelay, 17)
         }
+    }
+
+    func test_rateLimitFallsBackToResetHeaderForRetryDelay() async throws {
+        let resetAt = Date.now.addingTimeInterval(30)
+        let resetEpoch = Int(resetAt.timeIntervalSince1970)
+        let transport = MockHTTPClient(responses: [
+            .json(
+                statusCode: 429,
+                body: #"{"error":"Too Many Requests","status":429,"message":"Rate limit exceeded"}"#,
+                headers: ["Ratelimit-Reset": "\(resetEpoch)"]
+            )
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        do {
+            _ = try await api.fetchUser()
+            XCTFail("Expected rate limit error")
+        } catch let error as HelixError {
+            guard case .rateLimited(let rateLimit) = error else {
+                return XCTFail("Expected rateLimited, got \(error)")
+            }
+            XCTAssertEqual(rateLimit.retryAfter, nil)
+            XCTAssertNotNil(rateLimit.resetAt)
+            XCTAssertGreaterThanOrEqual(rateLimit.recommendedRetryDelay ?? 0, 0)
+        }
+    }
+
+    func test_serviceUnavailableRetriesOnceByDefault() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 503, body: #"{"error":"Service Unavailable","status":503,"message":"Try again"}"#),
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                {
+                  "id": "1",
+                  "login": "twitchdev",
+                  "display_name": "TwitchDev",
+                  "profile_image_url": "https://example.com/profile.png",
+                  "broadcaster_type": ""
+                }
+              ]
+            }
+            """),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let user = try await api.fetchUser()
+
+        XCTAssertEqual(user.id, "1")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    func test_serviceUnavailableRetryCanBeDisabled() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 503, body: #"{"error":"Service Unavailable","status":503,"message":"Try again"}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(
+            auth: auth,
+            clientId: "client-id",
+            httpClient: transport,
+            retryPolicy: .never
+        )
+
+        do {
+            _ = try await api.fetchUser()
+            XCTFail("Expected server error")
+        } catch let error as HelixError {
+            guard case .serverError(let status) = error else {
+                return XCTFail("Expected serverError, got \(error)")
+            }
+            XCTAssertEqual(status, 503)
+        }
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
     }
 
     func test_twitchErrorResponsePreservesStatusAndErrorName() async throws {

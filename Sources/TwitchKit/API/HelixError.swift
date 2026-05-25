@@ -10,7 +10,7 @@ public enum HelixError: Error, Sendable, LocalizedError {
     case notFound
     case conflict(TwitchAPIError)
     case unprocessable(TwitchAPIError)
-    case rateLimited(retryAfter: Int)
+    case rateLimited(HelixRateLimit)
 
     // Server errors
     case serverError(status: Int)
@@ -30,7 +30,12 @@ public enum HelixError: Error, Sendable, LocalizedError {
         case .notFound: "Not found"
         case .conflict(let error): "Conflict: \(error.message)"
         case .unprocessable(let error): "Unprocessable: \(error.message)"
-        case .rateLimited(let retry): "Rate limited — retry after \(retry)s"
+        case .rateLimited(let rateLimit):
+            if let retryDelay = rateLimit.recommendedRetryDelay {
+                "Rate limited — retry after \(retryDelay)s"
+            } else {
+                "Rate limited"
+            }
         case .serverError(let status): "Server error (HTTP \(status))"
         case .notAuthenticated: "Not authenticated — login required"
         case .missingClientSecret: "Client secret required for this OAuth flow"
@@ -38,6 +43,39 @@ public enum HelixError: Error, Sendable, LocalizedError {
         case .decodingFailed(let msg): "JSON decode failed: \(msg)"
         case .networkError(let msg): "Network error: \(msg)"
         }
+    }
+}
+
+/// Rate-limit metadata returned by Twitch Helix responses.
+public struct HelixRateLimit: Sendable, Equatable {
+    /// The rate at which points are added to the rate-limit bucket.
+    public let limit: Int?
+
+    /// The number of points remaining in the rate-limit bucket.
+    public let remaining: Int?
+
+    /// The time when Twitch says the rate-limit bucket resets to full.
+    public let resetAt: Date?
+
+    /// A direct retry delay, when a response includes a retry header.
+    public let retryAfter: Int?
+
+    public init(limit: Int? = nil, remaining: Int? = nil, resetAt: Date? = nil, retryAfter: Int? = nil) {
+        self.limit = limit
+        self.remaining = remaining
+        self.resetAt = resetAt
+        self.retryAfter = retryAfter
+    }
+
+    /// The number of seconds until `resetAt`, rounded up to avoid retrying too early.
+    public func secondsUntilReset(relativeTo date: Date = .now) -> Int? {
+        guard let resetAt else { return nil }
+        return max(0, Int(ceil(resetAt.timeIntervalSince(date))))
+    }
+
+    /// The preferred retry delay for a rate-limited request.
+    public var recommendedRetryDelay: Int? {
+        retryAfter ?? secondsUntilReset()
     }
 }
 
