@@ -8,6 +8,7 @@ public struct HelixClient: Sendable {
     private let clientId: String
     private let httpClient: any HTTPClient
     private let retryPolicy: HelixRetryPolicy
+    private let responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)?
 
     private static let baseURL = "https://api.twitch.tv/helix/"
 
@@ -15,21 +16,30 @@ public struct HelixClient: Sendable {
         tokenProvider: any TwitchAccessTokenProvider,
         clientId: String,
         httpClient: any HTTPClient = URLSessionHTTPClient(),
-        retryPolicy: HelixRetryPolicy = .default
+        retryPolicy: HelixRetryPolicy = .default,
+        responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)? = nil
     ) {
         self.tokenProvider = tokenProvider
         self.clientId = clientId
         self.httpClient = httpClient
         self.retryPolicy = retryPolicy
+        self.responseMetadataHandler = responseMetadataHandler
     }
 
     public init(
         auth: TwitchAuth,
         clientId: String,
         httpClient: any HTTPClient = URLSessionHTTPClient(),
-        retryPolicy: HelixRetryPolicy = .default
+        retryPolicy: HelixRetryPolicy = .default,
+        responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)? = nil
     ) {
-        self.init(tokenProvider: auth, clientId: clientId, httpClient: httpClient, retryPolicy: retryPolicy)
+        self.init(
+            tokenProvider: auth,
+            clientId: clientId,
+            httpClient: httpClient,
+            retryPolicy: retryPolicy,
+            responseMetadataHandler: responseMetadataHandler
+        )
     }
 
     func request<T: Decodable & Sendable>(
@@ -165,7 +175,7 @@ public struct HelixClient: Sendable {
         from data: Data,
         response: HTTPURLResponse
     ) throws -> HelixResponse<T> {
-        try validateSuccess(
+        let metadata = try validateSuccess(
             data: data,
             response: response,
             acceptedStatusCodes: [200, 202],
@@ -173,7 +183,15 @@ public struct HelixClient: Sendable {
         )
 
         do {
-            return try JSONDecoder.twitch().decode(HelixResponse<T>.self, from: data)
+            let decoded = try JSONDecoder.twitch().decode(HelixResponse<T>.self, from: data)
+            return HelixResponse(
+                data: decoded.data,
+                pagination: decoded.pagination,
+                total: decoded.total,
+                totalCost: decoded.totalCost,
+                maxTotalCost: decoded.maxTotalCost,
+                metadata: metadata
+            )
         } catch {
             let rawJSON = String(data: data.prefix(500), encoding: .utf8) ?? "non-utf8"
             logger.error("Helix decode failed for \(String(describing: type)): \(error); JSON: \(rawJSON)")
@@ -181,14 +199,17 @@ public struct HelixClient: Sendable {
         }
     }
 
+    @discardableResult
     private func validateSuccess(
         data: Data,
         response: HTTPURLResponse,
         acceptedStatusCodes: Set<Int>,
         fallbackMessage: String
-    ) throws {
+    ) throws -> HelixResponseMetadata {
         if acceptedStatusCodes.contains(response.statusCode) {
-            return
+            let metadata = responseMetadata(from: response)
+            responseMetadataHandler?(metadata)
+            return metadata
         }
         try throwError(data: data, response: response, fallbackMessage: fallbackMessage)
     }
@@ -226,6 +247,10 @@ public struct HelixClient: Sendable {
             resetAt: intHeader("Ratelimit-Reset", from: response).map { Date(timeIntervalSince1970: TimeInterval($0)) },
             retryAfter: intHeader("Retry-After", from: response)
         )
+    }
+
+    private func responseMetadata(from response: HTTPURLResponse) -> HelixResponseMetadata {
+        HelixResponseMetadata(statusCode: response.statusCode, rateLimit: rateLimit(from: response))
     }
 
     private func intHeader(_ field: String, from response: HTTPURLResponse) -> Int? {

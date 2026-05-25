@@ -15,6 +15,7 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 - Local validation for EventSub subscription management calls that would otherwise be rejected by Twitch.
 - `TwitchKitSmokeTest` executable target for live Twitch API, EventSub, chat, and cleanup smoke checks.
 - Typed Helix rate-limit metadata and configurable retry policy for Twitch's recommended 503 retry.
+- Successful Helix page responses and optional client callbacks now expose response metadata.
 
 ## [0.1.0-alpha.2] - 2026-05-25
 

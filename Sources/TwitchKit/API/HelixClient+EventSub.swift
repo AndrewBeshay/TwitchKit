@@ -30,7 +30,8 @@ extension HelixClient {
             pagination: response.pagination,
             total: response.total,
             totalCost: response.totalCost,
-            maxTotalCost: response.maxTotalCost
+            maxTotalCost: response.maxTotalCost,
+            metadata: response.metadata
         )
     }
 
@@ -44,7 +45,7 @@ extension HelixClient {
     ) -> HelixPagedSequence<EventSubSubscriptionRecord> {
         HelixPagedSequence { cursor in
             let page = try await fetchEventSubSubscriptionsPage(filter: filter, after: cursor)
-            return HelixPage(data: page.data, pagination: page.pagination, total: page.total)
+            return HelixPage(data: page.data, pagination: page.pagination, total: page.total, metadata: page.metadata)
         }
     }
 

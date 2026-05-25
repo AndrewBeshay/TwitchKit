@@ -40,19 +40,22 @@ public struct EventSubSubscriptionsPage: Sendable, Equatable {
     public let total: Int?
     public let totalCost: Int?
     public let maxTotalCost: Int?
+    public let metadata: HelixResponseMetadata?
 
     public init(
         data: [EventSubSubscriptionRecord],
         pagination: Pagination? = nil,
         total: Int? = nil,
         totalCost: Int? = nil,
-        maxTotalCost: Int? = nil
+        maxTotalCost: Int? = nil,
+        metadata: HelixResponseMetadata? = nil
     ) {
         self.data = data
         self.pagination = pagination
         self.total = total
         self.totalCost = totalCost
         self.maxTotalCost = maxTotalCost
+        self.metadata = metadata
     }
 
     public var nextCursor: String? {

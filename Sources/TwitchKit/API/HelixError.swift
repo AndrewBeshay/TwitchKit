@@ -79,6 +79,20 @@ public struct HelixRateLimit: Sendable, Equatable {
     }
 }
 
+/// HTTP metadata returned with a Helix response.
+public struct HelixResponseMetadata: Sendable, Equatable {
+    /// The HTTP status code returned by Twitch.
+    public let statusCode: Int
+
+    /// Rate-limit metadata returned with the response, when present.
+    public let rateLimit: HelixRateLimit
+
+    public init(statusCode: Int, rateLimit: HelixRateLimit = HelixRateLimit()) {
+        self.statusCode = statusCode
+        self.rateLimit = rateLimit
+    }
+}
+
 /// Twitch API error response shape.
 public struct TwitchAPIError: Decodable, Sendable, Equatable {
     public let error: String
@@ -103,23 +117,44 @@ public struct HelixResponse<T: Decodable & Sendable>: Decodable, Sendable {
     public let total: Int?
     public let totalCost: Int?
     public let maxTotalCost: Int?
+    public let metadata: HelixResponseMetadata?
 
     public init(
         data: [T],
         pagination: Pagination? = nil,
         total: Int? = nil,
         totalCost: Int? = nil,
-        maxTotalCost: Int? = nil
+        maxTotalCost: Int? = nil,
+        metadata: HelixResponseMetadata? = nil
     ) {
         self.data = data
         self.pagination = pagination
         self.total = total
         self.totalCost = totalCost
         self.maxTotalCost = maxTotalCost
+        self.metadata = metadata
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case data
+        case pagination
+        case total
+        case totalCost
+        case maxTotalCost
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        data = try container.decode([T].self, forKey: .data)
+        pagination = try container.decodeIfPresent(Pagination.self, forKey: .pagination)
+        total = try container.decodeIfPresent(Int.self, forKey: .total)
+        totalCost = try container.decodeIfPresent(Int.self, forKey: .totalCost)
+        maxTotalCost = try container.decodeIfPresent(Int.self, forKey: .maxTotalCost)
+        metadata = nil
     }
 
     public var page: HelixPage<T> {
-        HelixPage(data: data, pagination: pagination, total: total)
+        HelixPage(data: data, pagination: pagination, total: total, metadata: metadata)
     }
 }
 
@@ -136,11 +171,18 @@ public struct HelixPage<Element: Sendable>: Sendable {
     public let data: [Element]
     public let pagination: Pagination?
     public let total: Int?
+    public let metadata: HelixResponseMetadata?
 
-    public init(data: [Element], pagination: Pagination? = nil, total: Int? = nil) {
+    public init(
+        data: [Element],
+        pagination: Pagination? = nil,
+        total: Int? = nil,
+        metadata: HelixResponseMetadata? = nil
+    ) {
         self.data = data
         self.pagination = pagination
         self.total = total
+        self.metadata = metadata
     }
 
     public var nextCursor: String? {

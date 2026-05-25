@@ -445,6 +445,84 @@ final class HTTPClientTests: XCTestCase {
         }
     }
 
+    func test_successfulPageResponseIncludesRateLimitMetadata() async throws {
+        let resetEpoch = 1_770_000_000
+        let transport = MockHTTPClient(responses: [
+            .json(
+                statusCode: 200,
+                body: """
+                {
+                  "data": [
+                    {
+                      "id": "509658",
+                      "name": "Just Chatting",
+                      "box_art_url": "https://example.com/box-{width}x{height}.jpg",
+                      "igdb_id": "0"
+                    }
+                  ],
+                  "pagination": { "cursor": "next-cursor" }
+                }
+                """,
+                headers: [
+                    "Ratelimit-Limit": "800",
+                    "Ratelimit-Remaining": "799",
+                    "Ratelimit-Reset": "\(resetEpoch)",
+                ]
+            )
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchTopGamesPage(first: 1)
+
+        XCTAssertEqual(page.data.first?.id, "509658")
+        XCTAssertEqual(page.nextCursor, "next-cursor")
+        XCTAssertEqual(page.metadata?.statusCode, 200)
+        XCTAssertEqual(page.metadata?.rateLimit.limit, 800)
+        XCTAssertEqual(page.metadata?.rateLimit.remaining, 799)
+        XCTAssertEqual(page.metadata?.rateLimit.resetAt, Date(timeIntervalSince1970: TimeInterval(resetEpoch)))
+    }
+
+    func test_responseMetadataHandlerReceivesSuccessfulResponseMetadata() async throws {
+        let recorder = MetadataRecorder()
+        let transport = MockHTTPClient(responses: [
+            .json(
+                statusCode: 200,
+                body: """
+                {
+                  "data": [
+                    {
+                      "id": "1",
+                      "login": "twitchdev",
+                      "display_name": "TwitchDev",
+                      "profile_image_url": "https://example.com/profile.png",
+                      "broadcaster_type": ""
+                    }
+                  ]
+                }
+                """,
+                headers: ["Ratelimit-Remaining": "798"]
+            )
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(
+            auth: auth,
+            clientId: "client-id",
+            httpClient: transport,
+            responseMetadataHandler: { metadata in
+                Task { await recorder.append(metadata) }
+            }
+        )
+
+        _ = try await api.fetchUser()
+
+        let metadata = try await recorder.waitForFirst()
+        XCTAssertEqual(metadata.statusCode, 200)
+        XCTAssertEqual(metadata.rateLimit.remaining, 798)
+    }
+
     func test_serviceUnavailableRetriesOnceByDefault() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 503, body: #"{"error":"Service Unavailable","status":503,"message":"Try again"}"#),
@@ -918,6 +996,24 @@ actor MockHTTPClient: HTTPClient {
         case .nonHTTP(let body):
             return (body, URLResponse(url: request.url ?? URL(string: "https://example.com")!, mimeType: nil, expectedContentLength: body.count, textEncodingName: nil))
         }
+    }
+}
+
+actor MetadataRecorder {
+    private var metadata: [HelixResponseMetadata] = []
+
+    func append(_ value: HelixResponseMetadata) {
+        metadata.append(value)
+    }
+
+    func waitForFirst() async throws -> HelixResponseMetadata {
+        for _ in 0..<20 {
+            if let first = metadata.first {
+                return first
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        throw HelixError.invalidResponse
     }
 }
 

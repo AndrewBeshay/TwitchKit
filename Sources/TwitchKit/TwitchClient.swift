@@ -14,6 +14,8 @@ public final class TwitchClient: Sendable {
         tokenNamespace: String? = nil,
         tokenStore: (any TwitchTokenStore)? = nil,
         httpClient: any HTTPClient = URLSessionHTTPClient(),
+        retryPolicy: HelixRetryPolicy = .default,
+        responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)? = nil,
         isLive: @escaping @Sendable () async -> Bool = { false }
     ) {
         self.clientId = clientId
@@ -28,7 +30,13 @@ public final class TwitchClient: Sendable {
                 httpClient: httpClient
             )
         }
-        let api = HelixClient(auth: auth, clientId: clientId, httpClient: httpClient)
+        let api = HelixClient(
+            auth: auth,
+            clientId: clientId,
+            httpClient: httpClient,
+            retryPolicy: retryPolicy,
+            responseMetadataHandler: responseMetadataHandler
+        )
         self.auth = auth
         self.api = api
         self.eventSub = EventSubClient(api: api, isLive: isLive)
