@@ -13,10 +13,12 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 - `TwitchTokenProvider` for loading, validating, refreshing, and supplying access tokens.
 - `HelixClient` initializer that accepts any `TwitchAccessTokenProvider`.
 - Helix pagination primitives and channel followers pagination helpers.
+- Shared Helix query helpers for repeated parameters, optional parameters, and cursor pagination.
 
 ### Changed
 
 - `TwitchAuth` is now a convenience facade over the OAuth client and token provider.
+- `HelixClient` endpoint methods are organized into focused extension files by API area.
 - Keychain writes now use an add-or-update flow and device-only background-safe accessibility.
 - Helix errors preserve Twitch's structured error response.
 - Helix response handling is shared across standard data responses, accepted responses, and no-content responses.
