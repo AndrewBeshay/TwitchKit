@@ -44,21 +44,6 @@ public struct EventSubSubscription: Sendable, Hashable {
             condition: ["broadcaster_user_id": broadcasterID]
         )
     }
-
-    @available(*, deprecated, renamed: "makeChannelChatMessage(broadcasterID:userID:)")
-    public static func channelChatMessage(broadcasterID: String, userID: String) -> Self {
-        makeChannelChatMessage(broadcasterID: broadcasterID, userID: userID)
-    }
-
-    @available(*, deprecated, renamed: "makeChannelFollow(broadcasterID:moderatorID:)")
-    public static func channelFollow(broadcasterID: String, moderatorID: String) -> Self {
-        makeChannelFollow(broadcasterID: broadcasterID, moderatorID: moderatorID)
-    }
-
-    @available(*, deprecated, renamed: "makeChannelSubscribe(broadcasterID:)")
-    public static func channelSubscribe(broadcasterID: String) -> Self {
-        makeChannelSubscribe(broadcasterID: broadcasterID)
-    }
 }
 
 /// An EventSub subscription revocation notification.

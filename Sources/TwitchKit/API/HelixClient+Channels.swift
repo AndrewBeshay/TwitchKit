@@ -17,12 +17,6 @@ extension HelixClient {
         guard let channel = response.data.first else { throw HelixError.notFound }
         return channel
     }
-
-    @available(*, deprecated, renamed: "fetchChannelInfo(forBroadcasterID:)")
-    public func getChannelInfo(broadcasterId: String) async throws -> TwitchChannel {
-        try await fetchChannelInfo(forBroadcasterID: broadcasterId)
-    }
-
     /// Updates a channel's properties.
     ///
     /// All fields are optional, but at least one must be specified.
@@ -50,30 +44,6 @@ extension HelixClient {
             body: bodyData
         )
     }
-
-    @available(*, deprecated, renamed: "updateChannelInfo(forBroadcasterID:with:)")
-    public func updateChannelInfo(
-        broadcasterId: String,
-        title: String? = nil,
-        gameId: String? = nil,
-        broadcasterLanguage: String? = nil,
-        delay: Int? = nil,
-        tags: [String]? = nil,
-        contentClassificationLabels: [ContentClassificationLabel]? = nil,
-        isBrandedContent: Bool? = nil
-    ) async throws {
-        let update = ChannelInfoUpdate(
-            title: title,
-            gameId: gameId,
-            broadcasterLanguage: broadcasterLanguage,
-            delay: delay,
-            tags: tags,
-            contentClassificationLabels: contentClassificationLabels,
-            isBrandedContent: isBrandedContent
-        )
-        try await updateChannelInfo(forBroadcasterID: broadcasterId, with: update)
-    }
-
     /// Gets one page of users who follow the specified broadcaster.
     ///
     /// Requires `moderator:read:followers` scope.

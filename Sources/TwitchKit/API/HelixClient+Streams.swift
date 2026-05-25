@@ -17,11 +17,6 @@ extension HelixClient {
         guard let key = response.data.first?.streamKey else { throw HelixError.notFound }
         return key
     }
-
-    @available(*, deprecated, renamed: "fetchStreamKey(forBroadcasterID:)")
-    public func getStreamKey(broadcasterId: String) async throws -> String {
-        try await fetchStreamKey(forBroadcasterID: broadcasterId)
-    }
 }
 
 private struct StreamKeyResponse: Decodable, Sendable {

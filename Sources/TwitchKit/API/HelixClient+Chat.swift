@@ -12,12 +12,6 @@ extension HelixClient {
         let response: HelixResponse<TwitchEmote> = try await request(endpoint: "chat/emotes/global")
         return response.data
     }
-
-    @available(*, deprecated, renamed: "fetchGlobalEmotes")
-    public func getGlobalEmotes() async throws -> [TwitchEmote] {
-        try await fetchGlobalEmotes()
-    }
-
     /// Gets the broadcaster's custom emotes (subscriber, Bits tier, follower emotes).
     ///
     /// Channel emotes include `tier` (subscription tier), `emoteType` (subscriptions/bitstier/follower),
@@ -33,12 +27,6 @@ extension HelixClient {
         )
         return response.data
     }
-
-    @available(*, deprecated, renamed: "fetchChannelEmotes(forBroadcasterID:)")
-    public func getChannelEmotes(broadcasterId: String) async throws -> [TwitchEmote] {
-        try await fetchChannelEmotes(forBroadcasterID: broadcasterId)
-    }
-
     /// Gets Twitch's global chat badges (e.g., staff, turbo, premium).
     ///
     /// Each badge set contains multiple versions with images at 1x/2x/4x resolutions.
@@ -51,12 +39,6 @@ extension HelixClient {
         let response: HelixResponse<TwitchBadgeSet> = try await request(endpoint: "chat/badges/global")
         return response.data
     }
-
-    @available(*, deprecated, renamed: "fetchGlobalBadges")
-    public func getGlobalBadges() async throws -> [TwitchBadgeSet] {
-        try await fetchGlobalBadges()
-    }
-
     /// Gets the broadcaster's custom chat badges (e.g., subscriber tenure badges).
     ///
     /// Channel badges override global badges with the same `setId`.
@@ -72,12 +54,6 @@ extension HelixClient {
         )
         return response.data
     }
-
-    @available(*, deprecated, renamed: "fetchChannelBadges(forBroadcasterID:)")
-    public func getChannelBadges(broadcasterId: String) async throws -> [TwitchBadgeSet] {
-        try await fetchChannelBadges(forBroadcasterID: broadcasterId)
-    }
-
     /// Sends a chat message to a channel.
     ///
     /// The `senderId` must match the authenticated user's ID. Optionally reply

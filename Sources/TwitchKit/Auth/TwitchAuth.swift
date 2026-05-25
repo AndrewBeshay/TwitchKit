@@ -157,9 +157,6 @@ public actor TwitchAuth: TwitchAccessTokenProvider {
     /// A small starter set used by TwitchKit's current convenience APIs as raw Twitch scope strings.
     public static let defaultScopes = defaultScopeCases.map(\.rawValue)
 
-    @available(*, deprecated, renamed: "allScopes")
-    public static let scopes = allScopes
-
     public init(
         clientId: String,
         clientSecret: String? = nil,
@@ -281,21 +278,10 @@ public actor TwitchAuth: TwitchAccessTokenProvider {
         oauthClient.oidcAuthorizationCodeURL(rawScopes: rawScopes, claims: claims, state: state, nonce: nonce, forceVerify: forceVerify)
     }
 
-    /// Backwards-compatible alias for authorization-code apps.
-    @available(*, deprecated, renamed: "authorizationCodeURL")
-    public nonisolated func buildAuthURL() -> URL {
-        authorizationCodeURL()
-    }
-
     /// Exchanges an authorization code for tokens and stores them for future API requests.
     public func authenticate(withAuthorizationCode code: String) async throws {
         let token = try await oauthClient.exchangeAuthorizationCode(code)
         try await tokenProvider.setToken(token)
-    }
-
-    @available(*, deprecated, renamed: "authenticate(withAuthorizationCode:)")
-    public func handleAuthCode(_ code: String) async throws {
-        try await authenticate(withAuthorizationCode: code)
     }
 
     /// Requests an app access token with the client credentials flow.
@@ -340,11 +326,6 @@ public actor TwitchAuth: TwitchAccessTokenProvider {
         let token = try await oauthClient.pollDeviceCode(deviceCode: deviceCode, rawScopes: rawScopes)
         try await tokenProvider.setToken(token)
         return token
-    }
-
-    @available(*, deprecated, renamed: "pollDeviceCode(deviceCode:scopes:)")
-    public func pollDeviceCode(_ deviceCode: String, scopes: [String]) async throws -> OAuthToken {
-        try await pollDeviceCode(deviceCode: deviceCode, rawScopes: scopes)
     }
 
     public func refreshIfNeeded() async throws {

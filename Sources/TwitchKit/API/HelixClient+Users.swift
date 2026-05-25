@@ -14,9 +14,4 @@ extension HelixClient {
         guard let user = response.data.first else { throw HelixError.notFound }
         return user
     }
-
-    @available(*, deprecated, renamed: "fetchUser")
-    public func getUser() async throws -> TwitchUser {
-        try await fetchUser()
-    }
 }
