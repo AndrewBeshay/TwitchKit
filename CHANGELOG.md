@@ -6,6 +6,8 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 
 ## Unreleased
 
+## [0.1.0-alpha.2] - 2026-05-25
+
 ### Added
 
 - `TwitchOAuthClient` for OAuth URL construction and token exchange.
