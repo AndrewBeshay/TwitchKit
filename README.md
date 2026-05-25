@@ -40,7 +40,7 @@ let twitch = TwitchClient(
     tokenNamespace: "primary-account"
 )
 
-let authURL = await twitch.auth.implicitGrantURL(
+let authURL = twitch.auth.implicitGrantURL(
     scopes: [
         .userReadEmail,
         .userReadChat,
@@ -59,7 +59,7 @@ let twitch = TwitchClient(
     tokenNamespace: "primary-account"
 )
 
-let authURL = await twitch.auth.authorizationCodeURL(
+let authURL = twitch.auth.authorizationCodeURL(
     scopes: [
         .userReadEmail,
         .channelManageBroadcast,
@@ -94,6 +94,19 @@ try await twitch.auth.setToken(
 let user = try await twitch.api.fetchUser()
 let channel = try await twitch.api.fetchChannelInfo(forBroadcasterID: user.id)
 let emotes = try await twitch.api.fetchGlobalEmotes()
+```
+
+Paginated endpoints are available as either single pages or lazy async sequences:
+
+```swift
+let firstPage = try await twitch.api.fetchChannelFollowersPage(
+    forBroadcasterID: user.id,
+    first: 100
+)
+
+for try await follower in twitch.api.channelFollowers(forBroadcasterID: user.id) {
+    print("Follower:", follower.userName)
+}
 ```
 
 Sending a chat message:
@@ -160,6 +173,26 @@ TwitchKit exposes helpers for Twitch-supported OAuth flows:
 
 For iOS apps, avoid shipping a client secret in the app bundle. Prefer implicit grant, device code flow, or a backend-owned authorization code exchange depending on your app model.
 
+OAuth is split into composable pieces:
+
+- `TwitchOAuthClient` builds OAuth URLs and exchanges grants for tokens.
+- `TwitchTokenStore` abstracts token persistence.
+- `KeychainTokenStore` is the default Apple-platform token store.
+- `InMemoryTokenStore` is useful for tests, previews, and backend-owned OAuth.
+- `TwitchTokenProvider` loads, validates, refreshes, and supplies access tokens.
+- `TwitchAuth` is a convenience facade that composes the pieces above.
+
+Apps that already receive tokens from a backend can bypass Keychain storage entirely:
+
+```swift
+let twitch = TwitchClient(
+    clientId: "<your client id>",
+    tokenStore: InMemoryTokenStore(
+        token: OAuthToken(accessToken: "<backend issued access token>")
+    )
+)
+```
+
 ## Scope Catalog
 
 `TwitchScope` includes the current Twitch API, EventSub, IRC chat, and PubSub-specific scope strings documented by Twitch.
@@ -173,7 +206,7 @@ Request only the scopes your app needs. Twitch warns that requesting unnecessary
 TwitchKit is pre-1.0 and the public API may change. Current coverage includes:
 
 - OAuth helper flows and Keychain-backed token storage
-- Helix user, channel, emote, badge, stream key, and chat message APIs
+- Helix user, channel, follower, emote, badge, stream key, and chat message APIs
 - EventSub WebSocket connection management
 - Typed models for selected Twitch API and EventSub payloads
 - Swift 6 `Sendable` annotations and actor-isolated auth/EventSub clients
@@ -182,7 +215,7 @@ Planned areas for expansion:
 
 - More typed EventSub subscription builders and event models
 - More Helix endpoint coverage
-- Injectable networking for richer testing and host-app configuration
+- Injectable networking, token providers, and token stores for host-app configuration
 - Broader API documentation and examples
 
 ## License

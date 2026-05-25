@@ -12,16 +12,22 @@ public final class TwitchClient: Sendable {
         clientId: String,
         clientSecret: String? = nil,
         tokenNamespace: String? = nil,
+        tokenStore: (any TwitchTokenStore)? = nil,
         httpClient: any HTTPClient = URLSessionHTTPClient(),
         isLive: @escaping @Sendable () async -> Bool = { false }
     ) {
         self.clientId = clientId
-        let auth = TwitchAuth(
-            clientId: clientId,
-            clientSecret: clientSecret,
-            tokenNamespace: tokenNamespace,
-            httpClient: httpClient
-        )
+        let oauthClient = TwitchOAuthClient(clientId: clientId, clientSecret: clientSecret, httpClient: httpClient)
+        let auth = if let tokenStore {
+            TwitchAuth(oauthClient: oauthClient, tokenStore: tokenStore)
+        } else {
+            TwitchAuth(
+                clientId: clientId,
+                clientSecret: clientSecret,
+                tokenNamespace: tokenNamespace,
+                httpClient: httpClient
+            )
+        }
         let api = HelixClient(auth: auth, clientId: clientId, httpClient: httpClient)
         self.auth = auth
         self.api = api

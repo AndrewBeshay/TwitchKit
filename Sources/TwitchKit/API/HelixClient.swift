@@ -4,16 +4,24 @@ import os
 private let logger = Logger(subsystem: "com.twitchkit", category: "helix")
 
 public struct HelixClient: Sendable {
-    private let auth: TwitchAuth
+    private let tokenProvider: any TwitchAccessTokenProvider
     private let clientId: String
     private let httpClient: any HTTPClient
 
     private static let baseURL = "https://api.twitch.tv/helix/"
 
-    public init(auth: TwitchAuth, clientId: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
-        self.auth = auth
+    public init(
+        tokenProvider: any TwitchAccessTokenProvider,
+        clientId: String,
+        httpClient: any HTTPClient = URLSessionHTTPClient()
+    ) {
+        self.tokenProvider = tokenProvider
         self.clientId = clientId
         self.httpClient = httpClient
+    }
+
+    public init(auth: TwitchAuth, clientId: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
+        self.init(tokenProvider: auth, clientId: clientId, httpClient: httpClient)
     }
 
     // MARK: - Generic Request
@@ -109,7 +117,7 @@ public struct HelixClient: Sendable {
         urlRequest.httpMethod = method
         urlRequest.httpBody = body
 
-        let token = try await auth.accessToken()
+        let token = try await tokenProvider.accessToken()
         urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue(clientId, forHTTPHeaderField: "Client-Id")
         if body != nil {
@@ -125,8 +133,8 @@ public struct HelixClient: Sendable {
             // Auto-refresh on 401 and retry once
             if httpResponse.statusCode == 401 {
                 logger.warning("Helix \(endpoint) returned 401 — refreshing token and retrying")
-                try await auth.refreshIfNeeded()
-                let newToken = try await auth.accessToken()
+                try await tokenProvider.refreshIfNeeded()
+                let newToken = try await tokenProvider.accessToken()
                 urlRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
                 let (retryData, retryResponse) = try await httpClient.data(for: urlRequest)
                 guard let retryHttp = retryResponse as? HTTPURLResponse else {

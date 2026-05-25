@@ -4,6 +4,23 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## Unreleased
+
+### Added
+
+- `TwitchOAuthClient` for OAuth URL construction and token exchange.
+- `TwitchTokenStore`, `KeychainTokenStore`, and `InMemoryTokenStore` for configurable token persistence.
+- `TwitchTokenProvider` for loading, validating, refreshing, and supplying access tokens.
+- `HelixClient` initializer that accepts any `TwitchAccessTokenProvider`.
+- Helix pagination primitives and channel followers pagination helpers.
+
+### Changed
+
+- `TwitchAuth` is now a convenience facade over the OAuth client and token provider.
+- Keychain writes now use an add-or-update flow and device-only background-safe accessibility.
+- Helix errors preserve Twitch's structured error response.
+- Helix response handling is shared across standard data responses, accepted responses, and no-content responses.
+
 ## [0.1.0-alpha.1] - 2026-05-25
 
 ### Added

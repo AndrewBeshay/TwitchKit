@@ -19,7 +19,7 @@ final class HTTPClientTests: XCTestCase {
             }
             """)
         ])
-        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "headers")
+        let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -50,7 +50,7 @@ final class HTTPClientTests: XCTestCase {
             }
             """),
         ])
-        let auth = TwitchAuth(clientId: "client-id", clientSecret: "secret", tokenNamespace: "retry", httpClient: transport)
+        let auth = makeAuth(clientSecret: "secret", httpClient: transport)
         try await auth.setToken(OAuthToken(accessToken: "expired-token", refreshToken: "refresh-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -68,7 +68,7 @@ final class HTTPClientTests: XCTestCase {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 200, body: #"{"access_token":"access-token","refresh_token":"refresh-token","expires_in":3600,"token_type":"bearer"}"#)
         ])
-        let auth = TwitchAuth(clientId: "client-id", clientSecret: "secret", tokenNamespace: "oauth", httpClient: transport)
+        let auth = makeAuth(clientSecret: "secret", httpClient: transport)
 
         try await auth.authenticate(withAuthorizationCode: "auth-code")
 
@@ -87,7 +87,7 @@ final class HTTPClientTests: XCTestCase {
         let transport = MockHTTPClient(responses: [
             .nonHTTP(body: Data())
         ])
-        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "non-http")
+        let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -109,7 +109,7 @@ final class HTTPClientTests: XCTestCase {
                 headers: ["Retry-After": "17"]
             )
         ])
-        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "rate-limit")
+        let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -131,7 +131,7 @@ final class HTTPClientTests: XCTestCase {
                 body: #"{"error":"Bad Request","status":400,"message":"Missing broadcaster_id"}"#
             )
         ])
-        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "bad-request")
+        let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -152,7 +152,7 @@ final class HTTPClientTests: XCTestCase {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 204, body: "")
         ])
-        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "update-channel")
+        let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -171,7 +171,7 @@ final class HTTPClientTests: XCTestCase {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 202, body: #"{"data":[]}"#)
         ])
-        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "eventsub-create")
+        let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -205,7 +205,7 @@ final class HTTPClientTests: XCTestCase {
             }
             """)
         ])
-        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "followers-page")
+        let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -255,7 +255,7 @@ final class HTTPClientTests: XCTestCase {
             }
             """),
         ])
-        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "followers-sequence")
+        let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
@@ -316,4 +316,19 @@ actor MockHTTPClient: HTTPClient {
             return (body, URLResponse(url: request.url ?? URL(string: "https://example.com")!, mimeType: nil, expectedContentLength: body.count, textEncodingName: nil))
         }
     }
+}
+
+private func makeAuth(
+    clientId: String = "client-id",
+    clientSecret: String? = nil,
+    httpClient: any HTTPClient = URLSessionHTTPClient()
+) -> TwitchAuth {
+    TwitchAuth(
+        oauthClient: TwitchOAuthClient(
+            clientId: clientId,
+            clientSecret: clientSecret,
+            httpClient: httpClient
+        ),
+        tokenStore: InMemoryTokenStore()
+    )
 }

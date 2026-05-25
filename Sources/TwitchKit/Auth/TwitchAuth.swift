@@ -1,7 +1,4 @@
 import Foundation
-import os
-
-private let logger = Logger(subsystem: "com.twitchkit", category: "auth")
 
 /// A Twitch OAuth scope.
 public enum TwitchScope: String, CaseIterable, Sendable {
@@ -97,7 +94,7 @@ public enum TwitchScope: String, CaseIterable, Sendable {
 }
 
 /// A token response returned by Twitch OAuth endpoints.
-public struct OAuthToken: Decodable, Sendable, Equatable {
+public struct OAuthToken: Codable, Sendable, Equatable {
     public let accessToken: String
     public let refreshToken: String?
     public let expiresIn: Int?
@@ -132,20 +129,13 @@ public struct DeviceCodeAuthorization: Decodable, Sendable, Equatable {
     }
 }
 
-public actor TwitchAuth {
-    private let clientId: String
-    private let clientSecret: String?
-    private let redirectUri: String
-    private let tokenKeyPrefix: String
-    private let accessTokenKey: String
-    private let refreshTokenKey: String
-    private let httpClient: any HTTPClient
-
-    private var cachedAccessToken: String?
-    private var cachedRefreshToken: String?
+/// Convenience facade that composes OAuth URL/exchange helpers with token storage and refresh.
+public actor TwitchAuth: TwitchAccessTokenProvider {
+    public nonisolated let oauthClient: TwitchOAuthClient
+    public nonisolated let tokenProvider: TwitchTokenProvider
 
     /// Redirect URI — Twitch requires the value to match one of the redirect URLs registered for the app.
-    public static let redirectUri = "https://localhost"
+    public static let redirectUri = TwitchOAuthClient.defaultRedirectURI
 
     /// Every scope known to this package.
     public static let allScopeCases = TwitchScope.allCases
@@ -177,134 +167,130 @@ public actor TwitchAuth {
         tokenNamespace: String? = nil,
         httpClient: any HTTPClient = URLSessionHTTPClient()
     ) {
-        self.clientId = clientId
-        self.clientSecret = clientSecret
-        self.redirectUri = redirectUri
-        self.tokenKeyPrefix = "com.streamly.twitch.\(clientId).\(tokenNamespace ?? "default")"
-        self.accessTokenKey = "\(self.tokenKeyPrefix).accessToken"
-        self.refreshTokenKey = "\(self.tokenKeyPrefix).refreshToken"
-        self.httpClient = httpClient
-
-        if let data = try? KeychainStore.load(key: accessTokenKey),
-           let token = String(data: data, encoding: .utf8) {
-            cachedAccessToken = token
-            logger.info("Loaded access token from Keychain")
-        }
-        if let data = try? KeychainStore.load(key: refreshTokenKey),
-           let token = String(data: data, encoding: .utf8) {
-            cachedRefreshToken = token
-            logger.info("Loaded refresh token from Keychain")
-        }
+        let oauthClient = TwitchOAuthClient(
+            clientId: clientId,
+            clientSecret: clientSecret,
+            redirectUri: redirectUri,
+            httpClient: httpClient
+        )
+        self.oauthClient = oauthClient
+        self.tokenProvider = TwitchTokenProvider(
+            oauthClient: oauthClient,
+            tokenStore: KeychainTokenStore(clientId: clientId, namespace: tokenNamespace)
+        )
     }
 
-    // MARK: - Public
+    public init(oauthClient: TwitchOAuthClient, tokenStore: any TwitchTokenStore) {
+        self.oauthClient = oauthClient
+        self.tokenProvider = TwitchTokenProvider(oauthClient: oauthClient, tokenStore: tokenStore)
+    }
 
+    /// Returns whether a token is available locally.
     public var isAuthenticated: Bool {
-        cachedAccessToken != nil
+        get async {
+            await tokenProvider.isAuthenticated()
+        }
     }
 
-    public func accessToken() throws -> String {
-        guard let token = cachedAccessToken else {
-            throw HelixError.notAuthenticated
-        }
-        return token
+    public func accessToken() async throws -> String {
+        try await tokenProvider.accessToken()
     }
 
     /// Stores externally obtained tokens, useful when the host app or backend owns OAuth.
-    public func setToken(_ token: OAuthToken) throws {
-        try storeTokens(access: token.accessToken, refresh: token.refreshToken)
+    public func setToken(_ token: OAuthToken) async throws {
+        try await tokenProvider.setToken(token)
     }
 
     /// Builds an OAuth implicit grant URL for public mobile/client apps without refresh tokens.
-    public func implicitGrantURL(
+    public nonisolated func implicitGrantURL(
         scopes: [TwitchScope] = TwitchAuth.defaultScopeCases,
         state: String? = nil,
         forceVerify: Bool = true
     ) -> URL {
-        implicitGrantURL(rawScopes: scopes.map(\.rawValue), state: state, forceVerify: forceVerify)
+        oauthClient.implicitGrantURL(scopes: scopes, state: state, forceVerify: forceVerify)
     }
 
     /// Builds an OAuth implicit grant URL with raw scope strings.
-    public func implicitGrantURL(
+    public nonisolated func implicitGrantURL(
         rawScopes: [String],
         state: String? = nil,
         forceVerify: Bool = true
     ) -> URL {
-        authorizationURL(responseType: "token", scopes: rawScopes, state: state, forceVerify: forceVerify)
+        oauthClient.implicitGrantURL(rawScopes: rawScopes, state: state, forceVerify: forceVerify)
     }
 
-    /// Builds an authorization code URL for server-backed apps that can protect a client secret.
-    public func authorizationCodeURL(
+    /// Builds an authorization code URL for apps that can exchange the code safely.
+    public nonisolated func authorizationCodeURL(
         scopes: [TwitchScope] = TwitchAuth.defaultScopeCases,
         state: String? = nil,
         forceVerify: Bool = true
     ) -> URL {
-        authorizationCodeURL(rawScopes: scopes.map(\.rawValue), state: state, forceVerify: forceVerify)
+        oauthClient.authorizationCodeURL(scopes: scopes, state: state, forceVerify: forceVerify)
     }
 
     /// Builds an authorization code URL with raw scope strings.
-    public func authorizationCodeURL(
+    public nonisolated func authorizationCodeURL(
         rawScopes: [String],
         state: String? = nil,
         forceVerify: Bool = true
     ) -> URL {
-        authorizationURL(responseType: "code", scopes: rawScopes, state: state, forceVerify: forceVerify)
+        oauthClient.authorizationCodeURL(rawScopes: rawScopes, state: state, forceVerify: forceVerify)
     }
 
     /// Builds an OIDC implicit grant URL when the app also needs an ID token for sign-in.
-    public func oidcImplicitGrantURL(
+    public nonisolated func oidcImplicitGrantURL(
         scopes: [TwitchScope] = TwitchAuth.defaultScopeCases,
         claims: String? = nil,
         state: String? = nil,
         nonce: String,
         forceVerify: Bool = true
     ) -> URL {
-        oidcImplicitGrantURL(rawScopes: scopes.map(\.rawValue), claims: claims, state: state, nonce: nonce, forceVerify: forceVerify)
+        oauthClient.oidcImplicitGrantURL(scopes: scopes, claims: claims, state: state, nonce: nonce, forceVerify: forceVerify)
     }
 
     /// Builds an OIDC implicit grant URL with raw scope strings.
-    public func oidcImplicitGrantURL(
+    public nonisolated func oidcImplicitGrantURL(
         rawScopes: [String],
         claims: String? = nil,
         state: String? = nil,
         nonce: String,
         forceVerify: Bool = true
     ) -> URL {
-        authorizationURL(responseType: "token id_token", scopes: oidcScopes(rawScopes), state: state, forceVerify: forceVerify, nonce: nonce, claims: claims)
+        oauthClient.oidcImplicitGrantURL(rawScopes: rawScopes, claims: claims, state: state, nonce: nonce, forceVerify: forceVerify)
     }
 
-    /// Builds an OIDC authorization code URL for server-backed sign-in plus Twitch API access.
-    public func oidcAuthorizationCodeURL(
+    /// Builds an OIDC authorization code URL for sign-in plus Twitch API access.
+    public nonisolated func oidcAuthorizationCodeURL(
         scopes: [TwitchScope] = TwitchAuth.defaultScopeCases,
         claims: String? = nil,
         state: String? = nil,
         nonce: String,
         forceVerify: Bool = true
     ) -> URL {
-        oidcAuthorizationCodeURL(rawScopes: scopes.map(\.rawValue), claims: claims, state: state, nonce: nonce, forceVerify: forceVerify)
+        oauthClient.oidcAuthorizationCodeURL(scopes: scopes, claims: claims, state: state, nonce: nonce, forceVerify: forceVerify)
     }
 
     /// Builds an OIDC authorization code URL with raw scope strings.
-    public func oidcAuthorizationCodeURL(
+    public nonisolated func oidcAuthorizationCodeURL(
         rawScopes: [String],
         claims: String? = nil,
         state: String? = nil,
         nonce: String,
         forceVerify: Bool = true
     ) -> URL {
-        authorizationURL(responseType: "code", scopes: oidcScopes(rawScopes), state: state, forceVerify: forceVerify, nonce: nonce, claims: claims)
+        oauthClient.oidcAuthorizationCodeURL(rawScopes: rawScopes, claims: claims, state: state, nonce: nonce, forceVerify: forceVerify)
     }
 
     /// Backwards-compatible alias for authorization-code apps.
     @available(*, deprecated, renamed: "authorizationCodeURL")
-    public func buildAuthURL() -> URL {
+    public nonisolated func buildAuthURL() -> URL {
         authorizationCodeURL()
     }
 
     /// Exchanges an authorization code for tokens and stores them for future API requests.
     public func authenticate(withAuthorizationCode code: String) async throws {
-        let token = try await exchangeAuthorizationCode(code)
-        try storeTokens(access: token.accessToken, refresh: token.refreshToken)
+        let token = try await oauthClient.exchangeAuthorizationCode(code)
+        try await tokenProvider.setToken(token)
     }
 
     @available(*, deprecated, renamed: "authenticate(withAuthorizationCode:)")
@@ -313,42 +299,23 @@ public actor TwitchAuth {
     }
 
     /// Requests an app access token with the client credentials flow.
-    public func requestAppAccessToken(scopes: [TwitchScope] = []) async throws -> OAuthToken {
-        try await requestAppAccessToken(rawScopes: scopes.map(\.rawValue))
+    public nonisolated func requestAppAccessToken(scopes: [TwitchScope] = []) async throws -> OAuthToken {
+        try await oauthClient.requestAppAccessToken(scopes: scopes)
     }
 
     /// Requests an app access token with raw scope strings.
-    public func requestAppAccessToken(rawScopes: [String]) async throws -> OAuthToken {
-        guard let clientSecret else { throw HelixError.missingClientSecret }
-        let fields = [
-            "client_id": clientId,
-            "client_secret": clientSecret,
-            "grant_type": "client_credentials",
-            "scope": rawScopes.joined(separator: " "),
-        ]
-        return try await postTokenRequest(fields: fields)
+    public nonisolated func requestAppAccessToken(rawScopes: [String]) async throws -> OAuthToken {
+        try await oauthClient.requestAppAccessToken(rawScopes: rawScopes)
     }
 
     /// Starts Twitch's device code flow for clients with limited text input.
-    public func startDeviceCodeFlow(scopes: [TwitchScope] = TwitchAuth.defaultScopeCases) async throws -> DeviceCodeAuthorization {
-        try await startDeviceCodeFlow(rawScopes: scopes.map(\.rawValue))
+    public nonisolated func startDeviceCodeFlow(scopes: [TwitchScope] = TwitchAuth.defaultScopeCases) async throws -> DeviceCodeAuthorization {
+        try await oauthClient.startDeviceCodeFlow(scopes: scopes)
     }
 
     /// Starts Twitch's device code flow with raw scope strings.
-    public func startDeviceCodeFlow(rawScopes: [String]) async throws -> DeviceCodeAuthorization {
-        var request = URLRequest(url: URL(string: "https://id.twitch.tv/oauth2/device")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = formEncoded([
-            "client_id": clientId,
-            "scopes": rawScopes.joined(separator: " "),
-        ])
-
-        let (data, response) = try await httpClient.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw HelixError.unauthorized
-        }
-        return try JSONDecoder.twitch().decode(DeviceCodeAuthorization.self, from: data)
+    public nonisolated func startDeviceCodeFlow(rawScopes: [String]) async throws -> DeviceCodeAuthorization {
+        try await oauthClient.startDeviceCodeFlow(rawScopes: rawScopes)
     }
 
     /// Polls Twitch for device-code completion and stores the token on success.
@@ -356,23 +323,22 @@ public actor TwitchAuth {
         _ authorization: DeviceCodeAuthorization,
         scopes: [TwitchScope] = TwitchAuth.defaultScopeCases
     ) async throws -> OAuthToken {
-        try await pollDeviceCode(deviceCode: authorization.deviceCode, rawScopes: scopes.map(\.rawValue))
+        let token = try await oauthClient.pollDeviceCode(authorization, scopes: scopes)
+        try await tokenProvider.setToken(token)
+        return token
     }
 
     /// Polls Twitch for device-code completion using an explicit device code.
     public func pollDeviceCode(deviceCode: String, scopes: [TwitchScope] = TwitchAuth.defaultScopeCases) async throws -> OAuthToken {
-        try await pollDeviceCode(deviceCode: deviceCode, rawScopes: scopes.map(\.rawValue))
+        let token = try await oauthClient.pollDeviceCode(deviceCode: deviceCode, scopes: scopes)
+        try await tokenProvider.setToken(token)
+        return token
     }
 
     /// Polls Twitch for device-code completion using raw scope strings.
     public func pollDeviceCode(deviceCode: String, rawScopes: [String]) async throws -> OAuthToken {
-        let token = try await postTokenRequest(fields: [
-            "client_id": clientId,
-            "scope": rawScopes.joined(separator: " "),
-            "device_code": deviceCode,
-            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-        ])
-        try storeTokens(access: token.accessToken, refresh: token.refreshToken)
+        let token = try await oauthClient.pollDeviceCode(deviceCode: deviceCode, rawScopes: rawScopes)
+        try await tokenProvider.setToken(token)
         return token
     }
 
@@ -382,134 +348,14 @@ public actor TwitchAuth {
     }
 
     public func refreshIfNeeded() async throws {
-        guard let refreshToken = cachedRefreshToken else {
-            logger.warning("Token refresh requested but no refresh token available")
-            throw HelixError.unauthorized
-        }
-
-        var fields = [
-            "grant_type": "refresh_token",
-            "refresh_token": refreshToken,
-            "client_id": clientId,
-        ]
-        if let clientSecret {
-            fields["client_secret"] = clientSecret
-        }
-
-        do {
-            let token = try await postTokenRequest(fields: fields)
-            try storeTokens(access: token.accessToken, refresh: token.refreshToken)
-            logger.info("Token refresh succeeded")
-        } catch {
-            logout()
-            throw error
-        }
+        try await tokenProvider.refreshIfNeeded()
     }
 
     public func validateToken() async throws {
-        guard let token = cachedAccessToken else {
-            logger.info("No token to validate")
-            return
-        }
-
-        var request = URLRequest(url: URL(string: "https://id.twitch.tv/oauth2/validate")!)
-        request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
-
-        let (_, response) = try await httpClient.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw HelixError.invalidResponse }
-
-        if http.statusCode == 401 {
-            logger.warning("Token validation returned 401; attempting refresh")
-            try await refreshIfNeeded()
-        }
+        try await tokenProvider.validateToken()
     }
 
-    public func logout() {
-        cachedAccessToken = nil
-        cachedRefreshToken = nil
-        KeychainStore.delete(key: accessTokenKey)
-        KeychainStore.delete(key: refreshTokenKey)
+    public func logout() async throws {
+        try await tokenProvider.logout()
     }
-
-    // MARK: - Private
-
-    private func exchangeAuthorizationCode(_ code: String) async throws -> OAuthToken {
-        guard let clientSecret else { throw HelixError.missingClientSecret }
-        return try await postTokenRequest(fields: [
-            "client_id": clientId,
-            "client_secret": clientSecret,
-            "code": code,
-            "grant_type": "authorization_code",
-            "redirect_uri": redirectUri,
-        ])
-    }
-
-    private func postTokenRequest(fields: [String: String]) async throws -> OAuthToken {
-        var request = URLRequest(url: URL(string: "https://id.twitch.tv/oauth2/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = formEncoded(fields)
-
-        let (data, response) = try await httpClient.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw HelixError.unauthorized
-        }
-        return try JSONDecoder.twitch().decode(OAuthToken.self, from: data)
-    }
-
-    private func authorizationURL(
-        responseType: String,
-        scopes: [String],
-        state: String?,
-        forceVerify: Bool,
-        nonce: String? = nil,
-        claims: String? = nil
-    ) -> URL {
-        var queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "redirect_uri", value: redirectUri),
-            URLQueryItem(name: "response_type", value: responseType),
-            URLQueryItem(name: "scope", value: scopes.joined(separator: " ")),
-            URLQueryItem(name: "force_verify", value: forceVerify ? "true" : "false"),
-        ]
-        if let state {
-            queryItems.append(URLQueryItem(name: "state", value: state))
-        }
-        if let nonce {
-            queryItems.append(URLQueryItem(name: "nonce", value: nonce))
-        }
-        if let claims {
-            queryItems.append(URLQueryItem(name: "claims", value: claims))
-        }
-
-        var components = URLComponents(string: "https://id.twitch.tv/oauth2/authorize")!
-        components.queryItems = queryItems
-        return components.url!
-    }
-
-    private func oidcScopes(_ scopes: [String]) -> [String] {
-        scopes.contains("openid") ? scopes : ["openid"] + scopes
-    }
-
-    private func storeTokens(access: String, refresh: String?) throws {
-        cachedAccessToken = access
-        try KeychainStore.save(key: accessTokenKey, data: Data(access.utf8))
-        if let refresh {
-            cachedRefreshToken = refresh
-            try KeychainStore.save(key: refreshTokenKey, data: Data(refresh.utf8))
-        }
-    }
-}
-
-private func formEncoded(_ fields: [String: String]) -> Data? {
-    let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+="))
-    return fields
-        .filter { !$0.value.isEmpty }
-        .map { key, value in
-            let encodedKey = key.addingPercentEncoding(withAllowedCharacters: allowed) ?? key
-            let encodedValue = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
-            return "\(encodedKey)=\(encodedValue)"
-        }
-        .joined(separator: "&")
-        .data(using: .utf8)
 }

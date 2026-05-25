@@ -9,20 +9,20 @@ final class APIDesignTests: XCTestCase {
         XCTAssertLessThan(TwitchAuth.defaultScopes.count, TwitchAuth.allScopes.count)
     }
 
-    func test_authURLsAcceptTypedScopes() async {
+    func test_authURLsAcceptTypedScopes() {
         let auth = TwitchAuth(clientId: "client-id")
 
-        let url = await auth.implicitGrantURL(scopes: [.userReadEmail, .userReadChat])
+        let url = auth.implicitGrantURL(scopes: [.userReadEmail, .userReadChat])
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let scope = components?.queryItems?.first { $0.name == "scope" }?.value
 
         XCTAssertEqual(scope, "user:read:email user:read:chat")
     }
 
-    func test_rawScopeEscapeHatchAllowsFutureTwitchScopes() async {
+    func test_rawScopeEscapeHatchAllowsFutureTwitchScopes() {
         let auth = TwitchAuth(clientId: "client-id")
 
-        let url = await auth.implicitGrantURL(rawScopes: ["future:scope"])
+        let url = auth.implicitGrantURL(rawScopes: ["future:scope"])
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let scope = components?.queryItems?.first { $0.name == "scope" }?.value
 
