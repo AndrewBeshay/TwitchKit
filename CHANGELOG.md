@@ -4,16 +4,16 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
-## Unreleased
+## [0.2.0-beta.1] - 2026-05-26
 
 ### Added
 
+- Expanded Helix creator and channel-management coverage for followed channels, editors, content classification labels, search, schedules, charity, Hype Train, polls, predictions, raids, stream markers, goals, channel points rewards, subscriptions, clips, and videos.
 - Expanded Helix chat coverage for chatters, emote sets, user emotes, chat settings, shared chat sessions, announcements, shoutouts, pinned messages, and user chat colors.
 - Expanded Helix moderation coverage for AutoMod, bans/timeouts, unban requests, blocked terms, chat message deletion, moderated channels, moderators, VIPs, Shield Mode, warnings, and suspicious-user status.
 - Expanded EventSub subscription factories across chat, subscriptions, moderation, channel points, polls, predictions, goals, Hype Train, charity, user, and whisper events.
 - Typed EventSub payload decoding for key chat moderation, subscription lifecycle, unban request, VIP, Shield Mode, shoutout, and warning events.
 - EventSub subscription creation now supports Twitch's batching flag for Drop entitlement subscriptions.
-- Expanded Helix creator and channel-management coverage for followed channels, editors, content classification labels, search, schedules, charity, Hype Train, polls, predictions, raids, stream markers, goals, channel points rewards, subscriptions, clips, and videos.
 
 ## [0.1.0-alpha.3] - 2026-05-25
 

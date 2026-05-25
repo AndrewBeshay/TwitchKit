@@ -6,9 +6,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/tag/AndrewBeshay/TwitchKit?include_prereleases&label=release)](https://github.com/AndrewBeshay/TwitchKit/releases)
 
-TwitchKit is a Swift Package for working with the Twitch Helix API and EventSub WebSocket transport from modern Swift apps.
+TwitchKit is a Swift Package for working with the Twitch Helix API, Twitch OAuth, and EventSub WebSocket transport from modern Swift apps.
 
-The package is currently in early development. It focuses on a small, typed foundation for authentication, Helix requests, Twitch chat-related models, and EventSub event delivery.
+The package is currently pre-1.0. It provides typed authentication, token storage, Helix request helpers, EventSub subscription builders, and EventSub WebSocket delivery while the public API continues to settle.
 
 ## Requirements
 
@@ -21,7 +21,7 @@ The package is currently in early development. It focuses on a small, typed foun
 Add TwitchKit as a Swift Package dependency:
 
 ```swift
-.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", branch: "main")
+.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0-beta.1")
 ```
 
 Then add the product to your target:
@@ -95,6 +95,8 @@ let user = try await twitch.api.fetchUser()
 let channel = try await twitch.api.fetchChannelInfo(forBroadcasterID: user.id)
 let emotes = try await twitch.api.fetchGlobalEmotes()
 ```
+
+Current Helix coverage includes users, channels, streams, games, chat, moderation, EventSub management, followed channels, channel editors, search, schedules, charity, Hype Train, polls, predictions, raids, stream markers, goals, channel points rewards/redemptions, subscriptions, clips, and videos.
 
 Paginated endpoints are available as either single pages or lazy async sequences:
 
@@ -206,16 +208,16 @@ Request only the scopes your app needs. Twitch warns that requesting unnecessary
 TwitchKit is pre-1.0 and the public API may change. Current coverage includes:
 
 - OAuth helper flows and Keychain-backed token storage
-- Helix user, channel, follower, emote, badge, stream key, and chat message APIs
-- EventSub WebSocket connection management
-- Typed models for selected Twitch API and EventSub payloads
+- Broad Helix creator, chat, channel-management, moderation, media, and EventSub-management APIs
+- EventSub WebSocket connection management and subscription re-creation
+- EventSub subscription factories for the current Twitch subscription type catalog
+- Typed models for many Twitch API and EventSub payloads, with raw fallbacks for forward compatibility
 - Swift 6 `Sendable` annotations and actor-isolated auth/EventSub clients
 
 Planned areas for expansion:
 
-- More typed EventSub subscription builders and event models
-- More Helix endpoint coverage
-- Injectable networking, token providers, and token stores for host-app configuration
+- More typed EventSub event payload models
+- Server/platform-oriented Helix areas such as ads, analytics, extensions, drops, conduits, teams, tags, and user extension management
 - Broader API documentation and examples
 
 ## License
