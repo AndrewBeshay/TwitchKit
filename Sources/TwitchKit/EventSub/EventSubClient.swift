@@ -90,7 +90,9 @@ public actor EventSubClient {
     private func createSubscription(_ subscription: EventSubSubscription) async throws {
         guard let sessionId else {
             logger.error("❌ EventSub: no session ID — can't subscribe")
-            throw HelixError.badRequest("No EventSub session — call connect() first")
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "No EventSub session — call connect() first")
+            )
         }
         logger.info("📡 EventSub: subscribing to \(subscription.type) v\(subscription.version) with session \(sessionId)")
         try await api.createEventSubSubscription(

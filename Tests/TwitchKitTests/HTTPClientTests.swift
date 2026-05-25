@@ -100,6 +100,53 @@ final class HTTPClientTests: XCTestCase {
             }
         }
     }
+
+    func test_rateLimitUsesRetryAfterHeader() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(
+                statusCode: 429,
+                body: #"{"error":"Too Many Requests","status":429,"message":"Rate limit exceeded"}"#,
+                headers: ["Retry-After": "17"]
+            )
+        ])
+        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "rate-limit")
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        do {
+            _ = try await api.fetchUser()
+            XCTFail("Expected rate limit error")
+        } catch let error as HelixError {
+            guard case .rateLimited(let retryAfter) = error else {
+                return XCTFail("Expected rateLimited, got \(error)")
+            }
+            XCTAssertEqual(retryAfter, 17)
+        }
+    }
+
+    func test_twitchErrorResponsePreservesStatusAndErrorName() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(
+                statusCode: 400,
+                body: #"{"error":"Bad Request","status":400,"message":"Missing broadcaster_id"}"#
+            )
+        ])
+        let auth = TwitchAuth(clientId: "client-id", tokenNamespace: "bad-request")
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        do {
+            _ = try await api.fetchUser()
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.error, "Bad Request")
+            XCTAssertEqual(apiError.status, 400)
+            XCTAssertEqual(apiError.message, "Missing broadcaster_id")
+        }
+    }
 }
 
 actor MockHTTPClient: HTTPClient {

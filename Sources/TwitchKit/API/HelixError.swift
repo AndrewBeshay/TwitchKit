@@ -3,13 +3,13 @@ import Foundation
 public enum HelixError: Error, Sendable, LocalizedError {
     // Auth
     case unauthorized
-    case forbidden(String)
+    case forbidden(TwitchAPIError)
 
     // Client errors
-    case badRequest(String)
+    case badRequest(TwitchAPIError)
     case notFound
-    case conflict(String)
-    case unprocessable(String)
+    case conflict(TwitchAPIError)
+    case unprocessable(TwitchAPIError)
     case rateLimited(retryAfter: Int)
 
     // Server errors
@@ -25,11 +25,11 @@ public enum HelixError: Error, Sendable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unauthorized: "Unauthorized — token invalid or expired"
-        case .forbidden(let msg): "Forbidden: \(msg)"
-        case .badRequest(let msg): "Bad request: \(msg)"
+        case .forbidden(let error): "Forbidden: \(error.message)"
+        case .badRequest(let error): "Bad request: \(error.message)"
         case .notFound: "Not found"
-        case .conflict(let msg): "Conflict: \(msg)"
-        case .unprocessable(let msg): "Unprocessable: \(msg)"
+        case .conflict(let error): "Conflict: \(error.message)"
+        case .unprocessable(let error): "Unprocessable: \(error.message)"
         case .rateLimited(let retry): "Rate limited — retry after \(retry)s"
         case .serverError(let status): "Server error (HTTP \(status))"
         case .notAuthenticated: "Not authenticated — login required"
@@ -42,10 +42,20 @@ public enum HelixError: Error, Sendable, LocalizedError {
 }
 
 /// Twitch API error response shape.
-struct TwitchErrorResponse: Decodable {
-    let error: String?
-    let status: Int
-    let message: String
+public struct TwitchAPIError: Decodable, Sendable, Equatable {
+    public let error: String
+    public let status: Int
+    public let message: String
+
+    public init(error: String, status: Int, message: String) {
+        self.error = error
+        self.status = status
+        self.message = message
+    }
+
+    static func fallback(status: Int, message: String) -> Self {
+        Self(error: "HTTP \(status)", status: status, message: message)
+    }
 }
 
 /// Response wrapper for Helix endpoints.

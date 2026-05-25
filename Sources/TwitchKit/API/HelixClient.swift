@@ -54,10 +54,10 @@ public struct HelixClient: Sendable {
                 guard let retryHttp = retryResponse as? HTTPURLResponse else {
                     throw HelixError.invalidResponse
                 }
-                return try handleResponse(data: retryData, statusCode: retryHttp.statusCode)
+                return try handleResponse(data: retryData, response: retryHttp)
             }
 
-            return try handleResponse(data: data, statusCode: httpResponse.statusCode)
+            return try handleResponse(data: data, response: httpResponse)
         } catch let error as HelixError {
             throw error
         } catch {
@@ -65,8 +65,8 @@ public struct HelixClient: Sendable {
         }
     }
 
-    private func handleResponse<T: Decodable & Sendable>(data: Data, statusCode: Int) throws -> HelixResponse<T> {
-        switch statusCode {
+    private func handleResponse<T: Decodable & Sendable>(data: Data, response: HTTPURLResponse) throws -> HelixResponse<T> {
+        switch response.statusCode {
         case 200, 202:
             do {
                 return try JSONDecoder.twitch().decode(HelixResponse<T>.self, from: data)
@@ -76,26 +76,31 @@ public struct HelixClient: Sendable {
                 throw HelixError.decodingFailed(error.localizedDescription)
             }
         case 400:
-            let msg = (try? JSONDecoder.twitch().decode(TwitchErrorResponse.self, from: data))?.message ?? "Bad request"
-            throw HelixError.badRequest(msg)
+            throw HelixError.badRequest(apiError(from: data, status: response.statusCode, fallbackMessage: "Bad request"))
         case 401:
             throw HelixError.unauthorized
         case 403:
-            let msg = (try? JSONDecoder.twitch().decode(TwitchErrorResponse.self, from: data))?.message ?? "Forbidden"
-            throw HelixError.forbidden(msg)
+            throw HelixError.forbidden(apiError(from: data, status: response.statusCode, fallbackMessage: "Forbidden"))
         case 404:
             throw HelixError.notFound
         case 409:
-            let msg = (try? JSONDecoder.twitch().decode(TwitchErrorResponse.self, from: data))?.message ?? "Conflict"
-            throw HelixError.conflict(msg)
+            throw HelixError.conflict(apiError(from: data, status: response.statusCode, fallbackMessage: "Conflict"))
         case 422:
-            let msg = (try? JSONDecoder.twitch().decode(TwitchErrorResponse.self, from: data))?.message ?? "Unprocessable"
-            throw HelixError.unprocessable(msg)
+            throw HelixError.unprocessable(apiError(from: data, status: response.statusCode, fallbackMessage: "Unprocessable"))
         case 429:
-            throw HelixError.rateLimited(retryAfter: 60)
+            throw HelixError.rateLimited(retryAfter: retryAfter(from: response) ?? 60)
         default:
-            throw HelixError.serverError(status: statusCode)
+            throw HelixError.serverError(status: response.statusCode)
         }
+    }
+
+    private func apiError(from data: Data, status: Int, fallbackMessage: String) -> TwitchAPIError {
+        (try? JSONDecoder.twitch().decode(TwitchAPIError.self, from: data))
+            ?? TwitchAPIError.fallback(status: status, message: fallbackMessage)
+    }
+
+    private func retryAfter(from response: HTTPURLResponse) -> Int? {
+        response.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init)
     }
 
     // MARK: - Users
@@ -215,15 +220,19 @@ public struct HelixClient: Sendable {
         case 204:
             return // Success — no content
         case 400:
-            let msg = (try? JSONDecoder.twitch().decode(TwitchErrorResponse.self, from: data))?.message ?? "Bad request"
-            throw HelixError.badRequest(msg)
+            throw HelixError.badRequest(apiError(from: data, status: http.statusCode, fallbackMessage: "Bad request"))
         case 401:
             throw HelixError.unauthorized
         case 403:
-            let msg = (try? JSONDecoder.twitch().decode(TwitchErrorResponse.self, from: data))?.message ?? "Forbidden"
-            throw HelixError.forbidden(msg)
+            throw HelixError.forbidden(apiError(from: data, status: http.statusCode, fallbackMessage: "Forbidden"))
         case 409:
-            throw HelixError.conflict("Branded content flag changed too frequently")
+            throw HelixError.conflict(
+                apiError(
+                    from: data,
+                    status: http.statusCode,
+                    fallbackMessage: "Branded content flag changed too frequently"
+                )
+            )
         default:
             throw HelixError.serverError(status: http.statusCode)
         }
@@ -424,9 +433,9 @@ public struct HelixClient: Sendable {
         }
 
         guard http.statusCode == 202 else {
-            if let errorResponse = try? JSONDecoder.twitch().decode(TwitchErrorResponse.self, from: data) {
+            if let errorResponse = try? JSONDecoder.twitch().decode(TwitchAPIError.self, from: data) {
                 logger.error("EventSub subscribe failed for \(type): \(errorResponse.message)")
-                throw HelixError.badRequest(errorResponse.message)
+                throw HelixError.badRequest(errorResponse)
             }
             logger.error("EventSub subscribe failed for \(type): HTTP \(http.statusCode)")
             throw HelixError.serverError(status: http.statusCode)
