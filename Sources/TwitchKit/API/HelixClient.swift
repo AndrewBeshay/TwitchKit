@@ -6,12 +6,14 @@ private let logger = Logger(subsystem: "com.twitchkit", category: "helix")
 public struct HelixClient: Sendable {
     private let auth: TwitchAuth
     private let clientId: String
+    private let httpClient: any HTTPClient
 
     private static let baseURL = "https://api.twitch.tv/helix/"
 
-    public init(auth: TwitchAuth, clientId: String) {
+    public init(auth: TwitchAuth, clientId: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
         self.auth = auth
         self.clientId = clientId
+        self.httpClient = httpClient
     }
 
     // MARK: - Generic Request
@@ -37,8 +39,10 @@ public struct HelixClient: Sendable {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
-            let httpResponse = response as! HTTPURLResponse
+            let (data, response) = try await httpClient.data(for: urlRequest)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw HelixError.invalidResponse
+            }
 
             // Auto-refresh on 401 and retry once
             if httpResponse.statusCode == 401 {
@@ -46,8 +50,10 @@ public struct HelixClient: Sendable {
                 try await auth.refreshIfNeeded()
                 let newToken = try await auth.accessToken()
                 urlRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
-                let (retryData, retryResponse) = try await URLSession.shared.data(for: urlRequest)
-                let retryHttp = retryResponse as! HTTPURLResponse
+                let (retryData, retryResponse) = try await httpClient.data(for: urlRequest)
+                guard let retryHttp = retryResponse as? HTTPURLResponse else {
+                    throw HelixError.invalidResponse
+                }
                 return try handleResponse(data: retryData, statusCode: retryHttp.statusCode)
             }
 
@@ -200,8 +206,10 @@ public struct HelixClient: Sendable {
         urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue(clientId, forHTTPHeaderField: "Client-Id")
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        let http = response as! HTTPURLResponse
+        let (data, response) = try await httpClient.data(for: urlRequest)
+        guard let http = response as? HTTPURLResponse else {
+            throw HelixError.invalidResponse
+        }
 
         switch http.statusCode {
         case 204:
@@ -410,8 +418,10 @@ public struct HelixClient: Sendable {
         urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue(clientId, forHTTPHeaderField: "Client-Id")
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        let http = response as! HTTPURLResponse
+        let (data, response) = try await httpClient.data(for: urlRequest)
+        guard let http = response as? HTTPURLResponse else {
+            throw HelixError.invalidResponse
+        }
 
         guard http.statusCode == 202 else {
             if let errorResponse = try? JSONDecoder.twitch().decode(TwitchErrorResponse.self, from: data) {

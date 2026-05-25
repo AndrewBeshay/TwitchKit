@@ -18,6 +18,7 @@ public enum HelixError: Error, Sendable, LocalizedError {
     // Client-side
     case notAuthenticated
     case missingClientSecret
+    case invalidResponse
     case decodingFailed(String)
     case networkError(String)
 
@@ -33,6 +34,7 @@ public enum HelixError: Error, Sendable, LocalizedError {
         case .serverError(let status): "Server error (HTTP \(status))"
         case .notAuthenticated: "Not authenticated — login required"
         case .missingClientSecret: "Client secret required for this OAuth flow"
+        case .invalidResponse: "Invalid HTTP response"
         case .decodingFailed(let msg): "JSON decode failed: \(msg)"
         case .networkError(let msg): "Network error: \(msg)"
         }

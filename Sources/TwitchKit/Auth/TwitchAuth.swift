@@ -139,6 +139,7 @@ public actor TwitchAuth {
     private let tokenKeyPrefix: String
     private let accessTokenKey: String
     private let refreshTokenKey: String
+    private let httpClient: any HTTPClient
 
     private var cachedAccessToken: String?
     private var cachedRefreshToken: String?
@@ -173,7 +174,8 @@ public actor TwitchAuth {
         clientId: String,
         clientSecret: String? = nil,
         redirectUri: String = TwitchAuth.redirectUri,
-        tokenNamespace: String? = nil
+        tokenNamespace: String? = nil,
+        httpClient: any HTTPClient = URLSessionHTTPClient()
     ) {
         self.clientId = clientId
         self.clientSecret = clientSecret
@@ -181,6 +183,7 @@ public actor TwitchAuth {
         self.tokenKeyPrefix = "com.streamly.twitch.\(clientId).\(tokenNamespace ?? "default")"
         self.accessTokenKey = "\(self.tokenKeyPrefix).accessToken"
         self.refreshTokenKey = "\(self.tokenKeyPrefix).refreshToken"
+        self.httpClient = httpClient
 
         if let data = try? KeychainStore.load(key: accessTokenKey),
            let token = String(data: data, encoding: .utf8) {
@@ -341,7 +344,7 @@ public actor TwitchAuth {
             "scopes": rawScopes.joined(separator: " "),
         ])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await httpClient.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw HelixError.unauthorized
         }
@@ -412,8 +415,8 @@ public actor TwitchAuth {
         var request = URLRequest(url: URL(string: "https://id.twitch.tv/oauth2/validate")!)
         request.setValue("OAuth \(token)", forHTTPHeaderField: "Authorization")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { return }
+        let (_, response) = try await httpClient.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw HelixError.invalidResponse }
 
         if http.statusCode == 401 {
             logger.warning("Token validation returned 401; attempting refresh")
@@ -447,7 +450,7 @@ public actor TwitchAuth {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = formEncoded(fields)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await httpClient.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw HelixError.unauthorized
         }
