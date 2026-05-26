@@ -458,6 +458,98 @@ final class EventSubMessageTests: XCTestCase {
         XCTAssertEqual(charity.currentAmount.value, 5000)
     }
 
+    func test_decodeRemainingTypedEventSubFamilies() throws {
+        let automodJSON = """
+        {
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "user_id": "9001",
+            "user_login": "viewer",
+            "user_name": "Viewer",
+            "message_id": "message-id",
+            "message": { "text": "blocked message", "fragments": [] },
+            "category": "aggression",
+            "level": 2,
+            "status": "PENDING",
+            "held_at": "2020-07-15T17:16:03.17106713Z",
+            "reason": "Automod"
+        }
+        """.data(using: .utf8)!
+
+        let bitsJSON = """
+        {
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "user_id": "9001",
+            "user_login": "viewer",
+            "user_name": "Viewer",
+            "bits": 100,
+            "type": "cheer",
+            "message": { "text": "cheer100 nice", "fragments": [] }
+        }
+        """.data(using: .utf8)!
+
+        let sharedChatJSON = """
+        {
+            "session_id": "session-id",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "host_broadcaster_user_id": "1234",
+            "host_broadcaster_user_login": "host",
+            "host_broadcaster_user_name": "Host",
+            "participants": [
+                {
+                    "broadcaster_user_id": "1234",
+                    "broadcaster_user_login": "host",
+                    "broadcaster_user_name": "Host"
+                }
+            ],
+            "started_at": "2020-07-15T17:16:03.17106713Z"
+        }
+        """.data(using: .utf8)!
+
+        let whisperJSON = """
+        {
+            "from_user_id": "9001",
+            "from_user_login": "viewer",
+            "from_user_name": "Viewer",
+            "to_user_id": "1337",
+            "to_user_login": "cool_user",
+            "to_user_name": "Cool_User",
+            "whisper_id": "whisper-id",
+            "whisper": { "text": "hello" }
+        }
+        """.data(using: .utf8)!
+
+        let automodEvent = EventSubEvent.decode(type: "automod.message.hold", payload: automodJSON)
+        let bitsEvent = EventSubEvent.decode(type: "channel.bits.use", payload: bitsJSON)
+        let sharedChatEvent = EventSubEvent.decode(type: "channel.shared_chat.begin", payload: sharedChatJSON)
+        let whisperEvent = EventSubEvent.decode(type: "user.whisper.message", payload: whisperJSON)
+
+        guard case .automodMessageHold(let automod) = automodEvent else {
+            return XCTFail("Expected .automodMessageHold")
+        }
+        XCTAssertEqual(automod.message.text, "blocked message")
+
+        guard case .bitsUse(let bits) = bitsEvent else {
+            return XCTFail("Expected .bitsUse")
+        }
+        XCTAssertEqual(bits.bits, 100)
+
+        guard case .sharedChatBegin(let sharedChat) = sharedChatEvent else {
+            return XCTFail("Expected .sharedChatBegin")
+        }
+        XCTAssertEqual(sharedChat.sessionId, "session-id")
+
+        guard case .userWhisperMessage(let whisper) = whisperEvent else {
+            return XCTFail("Expected .userWhisperMessage")
+        }
+        XCTAssertEqual(whisper.whisper.text, "hello")
+    }
+
     func test_unknownEventDecodeFallsBackToRawPayload() {
         let data = #"{"future":true}"#.data(using: .utf8)!
         let event = EventSubEvent.decode(type: "channel.future", payload: data)

@@ -8,6 +8,12 @@ public enum EventSubEvent: Sendable {
     case subscription(TwitchSubscription)
     case streamOnline(EventSubStreamOnline)
     case streamOffline(EventSubStreamOffline)
+    case automodMessageHold(EventSubAutoModMessage)
+    case automodMessageUpdate(EventSubAutoModMessage)
+    case automodSettingsUpdate(EventSubAutoModSettingsUpdate)
+    case automodTermsUpdate(EventSubAutoModTermsUpdate)
+    case bitsUse(EventSubBitsUse)
+    case adBreakBegin(EventSubAdBreakBegin)
     case raid(EventSubRaid)
     case cheer(EventSubCheer)
     case ban(EventSubBan)
@@ -27,7 +33,14 @@ public enum EventSubEvent: Sendable {
     case chatUserMessageHold(EventSubChatUserMessageModeration)
     case chatUserMessageUpdate(EventSubChatUserMessageModeration)
     case chatSettingsUpdate(EventSubChatSettingsUpdate)
+    case sharedChatBegin(EventSubSharedChatSession)
+    case sharedChatUpdate(EventSubSharedChatSession)
+    case sharedChatEnd(EventSubSharedChatSession)
     case moderate(EventSubModerate)
+    case guestStarSessionBegin(EventSubGuestStarSession)
+    case guestStarSessionEnd(EventSubGuestStarSession)
+    case guestStarGuestUpdate(EventSubGuestStarGuestUpdate)
+    case guestStarSettingsUpdate(EventSubGuestStarSettingsUpdate)
     case subscriptionEnd(EventSubSubscriptionEnd)
     case subscriptionGift(EventSubSubscriptionGift)
     case subscriptionMessage(EventSubSubscriptionMessage)
@@ -48,6 +61,9 @@ public enum EventSubEvent: Sendable {
     case charityCampaignStart(EventSubCharityCampaign)
     case charityCampaignProgress(EventSubCharityCampaign)
     case charityCampaignStop(EventSubCharityCampaign)
+    case customPowerUpRedemptionAdd(EventSubCustomPowerUpRedemption)
+    case suspiciousUserMessage(EventSubSuspiciousUserMessage)
+    case suspiciousUserUpdate(EventSubSuspiciousUserUpdate)
     case unbanRequestCreate(EventSubUnbanRequest)
     case unbanRequestResolve(EventSubUnbanRequest)
     case vipAdd(EventSubVIPChange)
@@ -58,6 +74,13 @@ public enum EventSubEvent: Sendable {
     case shoutoutReceive(EventSubShoutout)
     case warningAcknowledge(EventSubWarning)
     case warningSend(EventSubWarning)
+    case conduitShardDisabled(EventSubConduitShardDisabled)
+    case dropEntitlementGrant(EventSubDropEntitlementGrant)
+    case extensionBitsTransactionCreate(EventSubExtensionBitsTransaction)
+    case userAuthorizationGrant(EventSubUserAuthorization)
+    case userAuthorizationRevoke(EventSubUserAuthorization)
+    case userUpdate(EventSubUserUpdate)
+    case userWhisperMessage(EventSubWhisperMessage)
     case revocation(EventSubRevocation)
     case known(EventSubKnownEvent)
     case unknown(type: String, payload: Data)
@@ -87,6 +110,30 @@ public enum EventSubEvent: Sendable {
         case "stream.offline":
             if let event = try? decoder.decode(EventSubStreamOffline.self, from: data) {
                 return .streamOffline(event)
+            }
+        case "automod.message.hold":
+            if let event = try? decoder.decode(EventSubAutoModMessage.self, from: data) {
+                return .automodMessageHold(event)
+            }
+        case "automod.message.update":
+            if let event = try? decoder.decode(EventSubAutoModMessage.self, from: data) {
+                return .automodMessageUpdate(event)
+            }
+        case "automod.settings.update":
+            if let event = try? decoder.decode(EventSubAutoModSettingsUpdate.self, from: data) {
+                return .automodSettingsUpdate(event)
+            }
+        case "automod.terms.update":
+            if let event = try? decoder.decode(EventSubAutoModTermsUpdate.self, from: data) {
+                return .automodTermsUpdate(event)
+            }
+        case "channel.bits.use":
+            if let event = try? decoder.decode(EventSubBitsUse.self, from: data) {
+                return .bitsUse(event)
+            }
+        case "channel.ad_break.begin":
+            if let event = try? decoder.decode(EventSubAdBreakBegin.self, from: data) {
+                return .adBreakBegin(event)
             }
         case "channel.raid":
             if let event = try? decoder.decode(EventSubRaid.self, from: data) {
@@ -164,9 +211,37 @@ public enum EventSubEvent: Sendable {
             if let event = try? decoder.decode(EventSubChatSettingsUpdate.self, from: data) {
                 return .chatSettingsUpdate(event)
             }
+        case "channel.shared_chat.begin":
+            if let event = try? decoder.decode(EventSubSharedChatSession.self, from: data) {
+                return .sharedChatBegin(event)
+            }
+        case "channel.shared_chat.update":
+            if let event = try? decoder.decode(EventSubSharedChatSession.self, from: data) {
+                return .sharedChatUpdate(event)
+            }
+        case "channel.shared_chat.end":
+            if let event = try? decoder.decode(EventSubSharedChatSession.self, from: data) {
+                return .sharedChatEnd(event)
+            }
         case "channel.moderate":
             if let event = try? decoder.decode(EventSubModerate.self, from: data) {
                 return .moderate(event)
+            }
+        case "channel.guest_star_session.begin":
+            if let event = try? decoder.decode(EventSubGuestStarSession.self, from: data) {
+                return .guestStarSessionBegin(event)
+            }
+        case "channel.guest_star_session.end":
+            if let event = try? decoder.decode(EventSubGuestStarSession.self, from: data) {
+                return .guestStarSessionEnd(event)
+            }
+        case "channel.guest_star_guest.update":
+            if let event = try? decoder.decode(EventSubGuestStarGuestUpdate.self, from: data) {
+                return .guestStarGuestUpdate(event)
+            }
+        case "channel.guest_star_settings.update":
+            if let event = try? decoder.decode(EventSubGuestStarSettingsUpdate.self, from: data) {
+                return .guestStarSettingsUpdate(event)
             }
         case "channel.subscription.end":
             if let event = try? decoder.decode(EventSubSubscriptionEnd.self, from: data) {
@@ -248,6 +323,18 @@ public enum EventSubEvent: Sendable {
             if let event = try? decoder.decode(EventSubCharityCampaign.self, from: data) {
                 return .charityCampaignStop(event)
             }
+        case "channel.custom_power_up_redemption.add":
+            if let event = try? decoder.decode(EventSubCustomPowerUpRedemption.self, from: data) {
+                return .customPowerUpRedemptionAdd(event)
+            }
+        case "channel.suspicious_user.message":
+            if let event = try? decoder.decode(EventSubSuspiciousUserMessage.self, from: data) {
+                return .suspiciousUserMessage(event)
+            }
+        case "channel.suspicious_user.update":
+            if let event = try? decoder.decode(EventSubSuspiciousUserUpdate.self, from: data) {
+                return .suspiciousUserUpdate(event)
+            }
         case "channel.unban_request.create":
             if let event = try? decoder.decode(EventSubUnbanRequest.self, from: data) {
                 return .unbanRequestCreate(event)
@@ -287,6 +374,34 @@ public enum EventSubEvent: Sendable {
         case "channel.warning.send":
             if let event = try? decoder.decode(EventSubWarning.self, from: data) {
                 return .warningSend(event)
+            }
+        case "conduit.shard.disabled":
+            if let event = try? decoder.decode(EventSubConduitShardDisabled.self, from: data) {
+                return .conduitShardDisabled(event)
+            }
+        case "drop.entitlement.grant":
+            if let event = try? decoder.decode(EventSubDropEntitlementGrant.self, from: data) {
+                return .dropEntitlementGrant(event)
+            }
+        case "extension.bits_transaction.create":
+            if let event = try? decoder.decode(EventSubExtensionBitsTransaction.self, from: data) {
+                return .extensionBitsTransactionCreate(event)
+            }
+        case "user.authorization.grant":
+            if let event = try? decoder.decode(EventSubUserAuthorization.self, from: data) {
+                return .userAuthorizationGrant(event)
+            }
+        case "user.authorization.revoke":
+            if let event = try? decoder.decode(EventSubUserAuthorization.self, from: data) {
+                return .userAuthorizationRevoke(event)
+            }
+        case "user.update":
+            if let event = try? decoder.decode(EventSubUserUpdate.self, from: data) {
+                return .userUpdate(event)
+            }
+        case "user.whisper.message":
+            if let event = try? decoder.decode(EventSubWhisperMessage.self, from: data) {
+                return .userWhisperMessage(event)
             }
         default:
             break

@@ -122,6 +122,82 @@ public struct EventSubStreamOffline: Codable, Sendable, Equatable {
     public let broadcasterUserName: String
 }
 
+public struct EventSubAutoModMessage: Decodable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let messageId: String
+    public let message: ChatMessage.ChatMessageBody
+    public let category: String?
+    public let level: Int?
+    public let status: String?
+    public let heldAt: Date?
+    public let reason: String?
+}
+
+public struct EventSubAutoModSettingsUpdate: Codable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let moderatorUserId: String?
+    public let moderatorUserLogin: String?
+    public let moderatorUserName: String?
+    public let overallLevel: Int?
+    public let disability: Int?
+    public let aggression: Int?
+    public let sexualitySexOrGender: Int?
+    public let misogyny: Int?
+    public let bullying: Int?
+    public let swearing: Int?
+    public let raceEthnicityOrReligion: Int?
+    public let sexBasedTerms: Int?
+}
+
+public struct EventSubAutoModTermsUpdate: Codable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let moderatorUserId: String?
+    public let moderatorUserLogin: String?
+    public let moderatorUserName: String?
+    public let action: String
+    public let fromAutomod: Bool?
+    public let terms: [String]
+}
+
+public struct EventSubBitsUse: Decodable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let bits: Int
+    public let type: String
+    public let message: ChatMessage.ChatMessageBody?
+    public let powerUp: PowerUp?
+
+    public struct PowerUp: Codable, Sendable, Equatable {
+        public let type: String
+        public let emote: EmoteReference?
+    }
+}
+
+public struct EventSubAdBreakBegin: Codable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let requesterUserId: String?
+    public let requesterUserLogin: String?
+    public let requesterUserName: String?
+    public let durationSeconds: Int
+    public let startedAt: Date
+    public let isAutomatic: Bool?
+}
+
 public struct EventSubRaid: Codable, Sendable, Equatable {
     public let fromBroadcasterUserId: String
     public let fromBroadcasterUserLogin: String
@@ -407,6 +483,26 @@ public struct EventSubChatSettingsUpdate: Codable, Sendable, Equatable {
     public let uniqueChatMode: Bool
 }
 
+public struct EventSubSharedChatSession: Codable, Sendable, Equatable {
+    public let sessionId: String
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let hostBroadcasterUserId: String?
+    public let hostBroadcasterUserLogin: String?
+    public let hostBroadcasterUserName: String?
+    public let participants: [Participant]?
+    public let startedAt: Date?
+    public let updatedAt: Date?
+    public let endedAt: Date?
+
+    public struct Participant: Codable, Sendable, Equatable {
+        public let broadcasterUserId: String
+        public let broadcasterUserLogin: String
+        public let broadcasterUserName: String
+    }
+}
+
 public struct EventSubModerate: Codable, Sendable, Equatable {
     public let broadcasterUserId: String
     public let broadcasterUserLogin: String
@@ -503,6 +599,43 @@ public struct EventSubModerate: Codable, Sendable, Equatable {
     }
 
     public struct Empty: Codable, Sendable, Equatable {}
+}
+
+public struct EventSubGuestStarSession: Codable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let sessionId: String?
+    public let startedAt: Date?
+    public let endedAt: Date?
+}
+
+public struct EventSubGuestStarGuestUpdate: Codable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let moderatorUserId: String?
+    public let moderatorUserLogin: String?
+    public let moderatorUserName: String?
+    public let sessionId: String?
+    public let guestUserId: String
+    public let guestUserLogin: String
+    public let guestUserName: String
+    public let slotId: String?
+    public let state: String
+    public let isAudioEnabled: Bool?
+    public let isVideoEnabled: Bool?
+    public let isLive: Bool?
+}
+
+public struct EventSubGuestStarSettingsUpdate: Codable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let isModeratorSendLiveEnabled: Bool?
+    public let slotCount: Int?
+    public let isBrowserSourceAudioEnabled: Bool?
+    public let groupLayout: String?
 }
 
 public struct EventSubSubscriptionGift: Codable, Sendable, Equatable {
@@ -682,6 +815,47 @@ public struct EventSubCharityDonation: Decodable, Sendable, Equatable {
     public let amount: CharityAmount
 }
 
+public struct EventSubCustomPowerUpRedemption: Decodable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let id: String
+    public let type: String
+    public let cost: Int?
+    public let message: ChatMessage.ChatMessageBody?
+    public let redeemedAt: Date?
+}
+
+public struct EventSubSuspiciousUserMessage: Decodable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let lowTrustStatus: String?
+    public let sharedBanChannelIds: [String]?
+    public let types: [String]?
+    public let banEvasionEvaluation: String?
+    public let message: ChatMessage.ChatMessageBody
+}
+
+public struct EventSubSuspiciousUserUpdate: Codable, Sendable, Equatable {
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let moderatorUserId: String
+    public let moderatorUserLogin: String
+    public let moderatorUserName: String
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let lowTrustStatus: String
+}
+
 public struct EventSubUnbanRequest: Codable, Sendable, Equatable {
     public let id: String
     public let broadcasterUserId: String
@@ -741,4 +915,86 @@ public struct EventSubWarning: Codable, Sendable, Equatable {
     public let userLogin: String
     public let userName: String
     public let reason: String?
+}
+
+public struct EventSubConduitShardDisabled: Codable, Sendable, Equatable {
+    public let conduitId: String
+    public let shardId: String
+    public let status: String
+    public let transport: Transport?
+
+    public struct Transport: Codable, Sendable, Equatable {
+        public let method: String
+        public let callback: URL?
+        public let sessionId: String?
+        public let conduitId: String?
+    }
+}
+
+public struct EventSubDropEntitlementGrant: Codable, Sendable, Equatable {
+    public let id: String?
+    public let data: [Entitlement]?
+
+    public struct Entitlement: Codable, Sendable, Equatable {
+        public let organizationId: String?
+        public let categoryId: String?
+        public let categoryName: String?
+        public let campaignId: String?
+        public let userId: String?
+        public let userLogin: String?
+        public let userName: String?
+        public let entitlementId: String?
+        public let benefitId: String?
+        public let createdAt: Date?
+    }
+}
+
+public struct EventSubExtensionBitsTransaction: Codable, Sendable, Equatable {
+    public let id: String
+    public let extensionClientId: String
+    public let broadcasterUserId: String
+    public let broadcasterUserLogin: String
+    public let broadcasterUserName: String
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let product: Product
+
+    public struct Product: Codable, Sendable, Equatable {
+        public let name: String
+        public let bits: Int
+        public let sku: String?
+        public let inDevelopment: Bool?
+    }
+}
+
+public struct EventSubUserAuthorization: Codable, Sendable, Equatable {
+    public let clientId: String
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+}
+
+public struct EventSubUserUpdate: Codable, Sendable, Equatable {
+    public let userId: String
+    public let userLogin: String
+    public let userName: String
+    public let email: String?
+    public let emailVerified: Bool?
+    public let description: String?
+}
+
+public struct EventSubWhisperMessage: Decodable, Sendable, Equatable {
+    public let fromUserId: String
+    public let fromUserLogin: String
+    public let fromUserName: String
+    public let toUserId: String
+    public let toUserLogin: String
+    public let toUserName: String
+    public let whisperId: String
+    public let whisper: Whisper
+
+    public struct Whisper: Codable, Sendable, Equatable {
+        public let text: String
+    }
 }

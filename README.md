@@ -23,7 +23,7 @@ The package is currently pre-1.0. It provides typed authentication, token storag
 Add TwitchKit as a Swift Package dependency:
 
 ```swift
-.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0-beta.2")
+.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0-beta.3")
 ```
 
 Then add the product to your target:
@@ -190,7 +190,7 @@ EventSub reconnects automatically and re-creates desired subscriptions after a f
 | Channel points | Automatic redemptions, custom rewards, custom reward redemptions, power-up redemptions | Automatic redemptions, custom rewards, custom reward redemptions |
 | Creator engagement | Polls, predictions, goals, Hype Train, charity campaigns/donations, raids, shoutouts, follows, cheers | Polls, predictions, goals, Hype Train, charity campaigns/donations, raids, shoutouts, follows, cheers |
 | Streams and users | Stream online/offline, user authorization grant/revoke, user update, whispers | Stream online/offline |
-| Platform/specialized | AutoMod, conduits, drops, extension bits, Guest Star | Known-type raw fallback |
+| Platform/specialized | AutoMod, conduits, drops, extension bits, Guest Star, user authorization/update, whispers | AutoMod, conduits, drops, extension bits, Guest Star, user authorization/update, whispers |
 
 Known EventSub subscription types that do not yet have dedicated field-level models decode as `.known(EventSubKnownEvent)` with the original JSON payload preserved. Future Twitch types decode as `.unknown(type:payload:)`.
 
@@ -244,12 +244,12 @@ TwitchKit is pre-1.0 and the public API may change. Current coverage includes:
 - Broad Helix creator, chat, channel-management, moderation, media, and EventSub-management APIs
 - EventSub WebSocket connection management and subscription re-creation
 - EventSub subscription factories for the current Twitch subscription type catalog
-- Typed models for many Twitch API and EventSub payloads, with raw fallbacks for forward compatibility
+- Typed models for Twitch's current EventSub subscription type catalog, with raw fallbacks for future Twitch types and decode-resilience
 - Swift 6 `Sendable` annotations and actor-isolated auth/EventSub clients
 
 Planned areas for expansion:
 
-- More typed EventSub event payload models
+- iOS OAuth example app
 - Server/platform-oriented Helix areas such as ads, analytics, extensions, drops, conduits, teams, tags, and user extension management
 - Broader API documentation and examples
 

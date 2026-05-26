@@ -194,6 +194,18 @@ struct TwitchKitSmokeTestCLI {
             "stream online: \(stream.broadcasterUserName) (\(stream.type.rawValue))"
         case .streamOffline(let stream):
             "stream offline: \(stream.broadcasterUserName)"
+        case .automodMessageHold(let message):
+            "automod message held: \(message.messageId)"
+        case .automodMessageUpdate(let message):
+            "automod message updated: \(message.messageId)"
+        case .automodSettingsUpdate:
+            "automod settings updated"
+        case .automodTermsUpdate(let event):
+            "automod terms \(event.action): \(event.terms.count) term(s)"
+        case .bitsUse(let event):
+            "bits used: \(event.bits)"
+        case .adBreakBegin(let event):
+            "ad break began: \(event.durationSeconds)s"
         case .raid(let raid):
             "raid from \(raid.fromBroadcasterUserName) to \(raid.toBroadcasterUserName), viewers: \(raid.viewers)"
         case .cheer(let cheer):
@@ -232,8 +244,22 @@ struct TwitchKitSmokeTestCLI {
             "chat message moderation update: \(event.messageId)"
         case .chatSettingsUpdate:
             "chat settings updated"
+        case .sharedChatBegin(let session):
+            "shared chat began: \(session.sessionId)"
+        case .sharedChatUpdate(let session):
+            "shared chat updated: \(session.sessionId)"
+        case .sharedChatEnd(let session):
+            "shared chat ended: \(session.sessionId)"
         case .moderate(let event):
             "moderation action: \(event.action)"
+        case .guestStarSessionBegin(let session):
+            "Guest Star session began: \(session.sessionId ?? "unknown")"
+        case .guestStarSessionEnd(let session):
+            "Guest Star session ended: \(session.sessionId ?? "unknown")"
+        case .guestStarGuestUpdate(let guest):
+            "Guest Star guest updated: \(guest.guestUserName)"
+        case .guestStarSettingsUpdate:
+            "Guest Star settings updated"
         case .subscriptionEnd(let subscription):
             "subscription ended: \(subscription.userName)"
         case .subscriptionGift(let gift):
@@ -274,6 +300,12 @@ struct TwitchKitSmokeTestCLI {
             "charity campaign progress: \(campaign.charityName)"
         case .charityCampaignStop(let campaign):
             "charity campaign stopped: \(campaign.charityName)"
+        case .customPowerUpRedemptionAdd(let redemption):
+            "custom power-up redemption: \(redemption.type)"
+        case .suspiciousUserMessage(let event):
+            "suspicious user message from \(event.userName)"
+        case .suspiciousUserUpdate(let event):
+            "suspicious user updated: \(event.userName)"
         case .unbanRequestCreate(let request):
             "unban request created by \(request.userName)"
         case .unbanRequestResolve(let request):
@@ -294,6 +326,20 @@ struct TwitchKitSmokeTestCLI {
             "warning acknowledged by \(warning.userName)"
         case .warningSend(let warning):
             "warning sent to \(warning.userName)"
+        case .conduitShardDisabled(let shard):
+            "conduit shard disabled: \(shard.shardId)"
+        case .dropEntitlementGrant(let grant):
+            "drop entitlement grant: \(grant.data?.count ?? 0) entitlement(s)"
+        case .extensionBitsTransactionCreate(let transaction):
+            "extension bits transaction: \(transaction.product.bits) bits"
+        case .userAuthorizationGrant(let authorization):
+            "user authorization granted: \(authorization.userName)"
+        case .userAuthorizationRevoke(let authorization):
+            "user authorization revoked: \(authorization.userName)"
+        case .userUpdate(let user):
+            "user updated: \(user.userName)"
+        case .userWhisperMessage(let whisper):
+            "whisper from \(whisper.fromUserName)"
         case .revocation(let revocation):
             "revocation: \(revocation.type) [\(revocation.status.rawValue)]"
         case .known(let event):

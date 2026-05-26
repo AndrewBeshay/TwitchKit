@@ -4,6 +4,13 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [0.2.0-beta.3] - 2026-05-26
+
+### Added
+
+- Added typed EventSub notification payloads for the remaining current Twitch subscription type families, including AutoMod, Bits use, ads, shared chat, Guest Star, custom power-up redemptions, suspicious users, conduits, drops, extension Bits transactions, user authorization/update, and whispers.
+- Added EventSub decoding coverage tests for remaining typed payload families.
+
 ## [0.2.0-beta.2] - 2026-05-26
 
 ### Added
