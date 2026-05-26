@@ -4,6 +4,17 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [0.2.0] - 2026-05-26
+
+### Added
+
+- Added remaining broad Helix API coverage for ads, analytics, Bits, EventSub conduits, Drops entitlements, extension management, user extension activation, Guest Star, tags, teams, user block/authorization helpers, followed streams, and whispers.
+- Added request-construction tests for the newly covered Helix endpoint families.
+
+### Changed
+
+- Promoted `0.2.0` to the first non-prerelease package release.
+
 ## [0.2.0-beta.4] - 2026-05-26
 
 ### Changed

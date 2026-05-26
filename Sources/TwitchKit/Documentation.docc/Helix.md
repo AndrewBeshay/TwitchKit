@@ -38,6 +38,10 @@ let response = try await client.api.sendChatMessage(
 )
 ```
 
+## Coverage
+
+TwitchKit includes typed helpers for the public Helix families in Twitch's API reference, including chat, moderation, EventSub management, conduits, channel points, clips/videos, schedules, subscriptions, ads, analytics, Bits, Drops entitlements, extensions, Guest Star, tags, teams, users, and whispers.
+
 ## Pagination
 
 Many Twitch APIs return paginated ``TwitchKit/HelixResponse`` values. Use the response data immediately and keep the cursor when you need another page.

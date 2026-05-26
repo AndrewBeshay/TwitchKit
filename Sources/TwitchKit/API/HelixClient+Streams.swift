@@ -97,6 +97,31 @@ extension HelixClient {
         guard let key = response.data.first?.streamKey else { throw HelixError.notFound }
         return key
     }
+
+    /// Gets one page of followed live streams for a user.
+    public func fetchFollowedStreamsPage(
+        userID: String,
+        first: Int? = nil,
+        after cursor: String? = nil
+    ) async throws -> HelixPage<TwitchStream> {
+        var queryItems = [URLQueryItem(name: "user_id", value: userID)]
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+
+        let response: HelixResponse<TwitchStream> = try await request(
+            endpoint: "streams/followed",
+            queryItems: queryItems
+        )
+        return response.page
+    }
+
+    /// Returns an async sequence of followed live streams for a user.
+    public func followedStreams(userID: String, pageSize: Int? = nil) -> HelixPagedSequence<TwitchStream> {
+        pagedRequest(
+            endpoint: "streams/followed",
+            queryItems: [URLQueryItem(name: "user_id", value: userID)],
+            pageSize: pageSize
+        )
+    }
 }
 
 private struct StreamKeyResponse: Decodable, Sendable {

@@ -1366,6 +1366,104 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(pollObject["broadcaster_id"] as? String, "broadcaster")
         XCTAssertEqual(pollObject["duration"] as? Int, 60)
     }
+
+    func test_newHelixCoverageUsesExpectedAdsBitsAndDiscoveryEndpoints() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[{"length":60,"message":"ok","retry_after":480}]}"#),
+            .json(statusCode: 200, body: #"{"data":[{"prefix":"Cheer","tiers":[],"type":"global_first_party","order":1,"last_updated":"2024-01-01T00:00:00Z","is_charitable":false}]}"#),
+            .json(statusCode: 200, body: #"{"data":[],"pagination":{"cursor":"next"}}"#),
+            .json(statusCode: 204, body: ""),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.startCommercial(broadcasterID: "broadcaster", length: 60)
+        _ = try await api.fetchCheermotes(broadcasterID: "broadcaster")
+        _ = try await api.fetchAllStreamTags(tagIDs: ["tag"], first: 10, after: "cursor")
+        try await api.sendWhisper(fromUserID: "from", toUserID: "to", message: "hello")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests[0].httpMethod, "POST")
+        XCTAssertEqual(requests[0].url?.absoluteString, "https://api.twitch.tv/helix/channels/commercial")
+        XCTAssertEqual(requests[1].url?.absoluteString, "https://api.twitch.tv/helix/bits/cheermotes?broadcaster_id=broadcaster")
+        XCTAssertEqual(requests[2].url?.absoluteString, "https://api.twitch.tv/helix/tags/streams?tag_id=tag&first=10&after=cursor")
+        XCTAssertEqual(requests[3].httpMethod, "POST")
+        XCTAssertEqual(requests[3].url?.absoluteString, "https://api.twitch.tv/helix/whispers?from_user_id=from&to_user_id=to")
+    }
+
+    func test_newHelixCoverageUsesExpectedConduitAndEntitlementEndpoints() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[{"id":"conduit","shard_count":2}]}"#),
+            .json(statusCode: 200, body: #"{"data":[],"pagination":{"cursor":"next"}}"#),
+            .json(statusCode: 200, body: #"{"data":[{"status":"SUCCESS","ids":["entitlement"]}]}"#),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.createConduit(shardCount: 2)
+        _ = try await api.fetchDropsEntitlementsPage(gameID: "game", fulfillmentStatus: .claimed, first: 5, after: "cursor")
+        _ = try await api.updateDropsEntitlements(entitlementIDs: ["entitlement"], fulfillmentStatus: .fulfilled)
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests[0].httpMethod, "POST")
+        XCTAssertEqual(requests[0].url?.absoluteString, "https://api.twitch.tv/helix/eventsub/conduits")
+        XCTAssertEqual(requests[1].url?.absoluteString, "https://api.twitch.tv/helix/entitlements/drops?game_id=game&fulfillment_status=CLAIMED&first=5&after=cursor")
+        XCTAssertEqual(requests[2].httpMethod, "PATCH")
+        XCTAssertEqual(requests[2].url?.absoluteString, "https://api.twitch.tv/helix/entitlements/drops")
+    }
+
+    func test_newHelixCoverageUsesExpectedExtensionAndUserExtensionEndpoints() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[{"id":"ext","name":"Extension"}]}"#),
+            .json(statusCode: 204, body: ""),
+            .json(statusCode: 200, body: #"{"data":{"panel":{},"overlay":{},"component":{}}}"#),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.fetchExtensions(extensionID: "ext", extensionVersion: "1.0.0")
+        try await api.setExtensionRequiredConfiguration(
+            broadcasterID: "broadcaster",
+            extensionID: "ext",
+            extensionVersion: "1.0.0",
+            requiredConfiguration: "{}"
+        )
+        _ = try await api.fetchUserActiveExtensions(userID: "user")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests[0].url?.absoluteString, "https://api.twitch.tv/helix/extensions?extension_id=ext&extension_version=1.0.0")
+        XCTAssertEqual(requests[1].httpMethod, "PUT")
+        XCTAssertEqual(requests[1].url?.absoluteString, "https://api.twitch.tv/helix/extensions/required_configuration?broadcaster_id=broadcaster")
+        XCTAssertEqual(requests[2].url?.absoluteString, "https://api.twitch.tv/helix/users/extensions?user_id=user")
+    }
+
+    func test_newHelixCoverageUsesExpectedGuestStarEndpoints() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 204, body: ""),
+            .json(statusCode: 204, body: ""),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        try await api.sendGuestStarInvite(broadcasterID: "broadcaster", moderatorID: "moderator", sessionID: "session", guestID: "guest")
+        try await api.updateGuestStarSlotSettings(
+            broadcasterID: "broadcaster",
+            moderatorID: "moderator",
+            sessionID: "session",
+            slotID: "1",
+            update: GuestStarSlotSettingsUpdate(isAudioEnabled: true, isLive: false, volume: 75)
+        )
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests[0].httpMethod, "POST")
+        XCTAssertEqual(requests[0].url?.absoluteString, "https://api.twitch.tv/helix/guest_star/invites?broadcaster_id=broadcaster&moderator_id=moderator&session_id=session&guest_id=guest")
+        XCTAssertEqual(requests[1].httpMethod, "PATCH")
+        XCTAssertEqual(requests[1].url?.absoluteString, "https://api.twitch.tv/helix/guest_star/slot_settings?broadcaster_id=broadcaster&moderator_id=moderator&session_id=session&slot_id=1&is_audio_enabled=true&is_live=false&volume=75")
+    }
 }
 
 actor MockHTTPClient: HTTPClient {

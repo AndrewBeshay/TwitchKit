@@ -4,7 +4,7 @@
 [![Swift Package Index](https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/AndrewBeshay/TwitchKit/badge?type=swift-versions)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
 [![SPI Platforms](https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/AndrewBeshay/TwitchKit/badge?type=platforms)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
 ![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
-![Platforms](https://img.shields.io/badge/platforms-iOS%2026%20%7C%20macOS%2015-lightgrey.svg)
+![Platforms](https://img.shields.io/badge/platforms-iOS%2016%20%7C%20macOS%2013-lightgrey.svg)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/tag/AndrewBeshay/TwitchKit?include_prereleases&label=release)](https://github.com/AndrewBeshay/TwitchKit/releases)
 
@@ -23,7 +23,7 @@ The package is currently pre-1.0. It provides typed authentication, token storag
 Add TwitchKit as a Swift Package dependency:
 
 ```swift
-.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0-beta.4")
+.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0")
 ```
 
 Then add the product to your target:
@@ -98,7 +98,7 @@ let channel = try await twitch.api.fetchChannelInfo(forBroadcasterID: user.id)
 let emotes = try await twitch.api.fetchGlobalEmotes()
 ```
 
-Current Helix coverage includes users, channels, streams, games, chat, moderation, EventSub management, followed channels, channel editors, search, schedules, charity, Hype Train, polls, predictions, raids, stream markers, goals, channel points rewards/redemptions, subscriptions, clips, and videos.
+Current Helix coverage includes users, channels, streams, games, chat, moderation, EventSub management, ads, analytics, Bits, conduits, entitlements, extensions, Guest Star, followed channels/streams, channel editors, search, schedules, charity, Hype Train, polls, predictions, raids, stream markers, goals, channel points rewards/redemptions, subscriptions, clips, tags, teams, videos, and whispers.
 
 Paginated endpoints are available as either single pages or lazy async sequences:
 
