@@ -16,13 +16,38 @@ public enum EventSubEvent: Sendable {
     case moderatorRemove(EventSubModeratorChange)
     case channelPointsCustomRewardRedemptionAdd(EventSubChannelPointsCustomRewardRedemption)
     case channelPointsCustomRewardRedemptionUpdate(EventSubChannelPointsCustomRewardRedemption)
+    case channelPointsCustomRewardAdd(EventSubChannelPointsCustomReward)
+    case channelPointsCustomRewardUpdate(EventSubChannelPointsCustomReward)
+    case channelPointsCustomRewardRemove(EventSubChannelPointsCustomReward)
+    case channelPointsAutomaticRewardRedemptionAdd(EventSubChannelPointsAutomaticRewardRedemption)
     case chatClear(EventSubChatClear)
     case chatClearUserMessages(EventSubChatClearUserMessages)
     case chatMessageDelete(EventSubChatMessageDelete)
+    case chatNotification(EventSubChatNotification)
+    case chatUserMessageHold(EventSubChatUserMessageModeration)
+    case chatUserMessageUpdate(EventSubChatUserMessageModeration)
     case chatSettingsUpdate(EventSubChatSettingsUpdate)
+    case moderate(EventSubModerate)
     case subscriptionEnd(EventSubSubscriptionEnd)
     case subscriptionGift(EventSubSubscriptionGift)
     case subscriptionMessage(EventSubSubscriptionMessage)
+    case pollBegin(EventSubPoll)
+    case pollProgress(EventSubPoll)
+    case pollEnd(EventSubPoll)
+    case predictionBegin(EventSubPrediction)
+    case predictionProgress(EventSubPrediction)
+    case predictionLock(EventSubPrediction)
+    case predictionEnd(EventSubPrediction)
+    case goalBegin(EventSubGoal)
+    case goalProgress(EventSubGoal)
+    case goalEnd(EventSubGoal)
+    case hypeTrainBegin(EventSubHypeTrain)
+    case hypeTrainProgress(EventSubHypeTrain)
+    case hypeTrainEnd(EventSubHypeTrain)
+    case charityCampaignDonate(EventSubCharityDonation)
+    case charityCampaignStart(EventSubCharityCampaign)
+    case charityCampaignProgress(EventSubCharityCampaign)
+    case charityCampaignStop(EventSubCharityCampaign)
     case unbanRequestCreate(EventSubUnbanRequest)
     case unbanRequestResolve(EventSubUnbanRequest)
     case vipAdd(EventSubVIPChange)
@@ -95,6 +120,22 @@ public enum EventSubEvent: Sendable {
             if let event = try? decoder.decode(EventSubChannelPointsCustomRewardRedemption.self, from: data) {
                 return .channelPointsCustomRewardRedemptionUpdate(event)
             }
+        case "channel.channel_points_custom_reward.add":
+            if let event = try? decoder.decode(EventSubChannelPointsCustomReward.self, from: data) {
+                return .channelPointsCustomRewardAdd(event)
+            }
+        case "channel.channel_points_custom_reward.update":
+            if let event = try? decoder.decode(EventSubChannelPointsCustomReward.self, from: data) {
+                return .channelPointsCustomRewardUpdate(event)
+            }
+        case "channel.channel_points_custom_reward.remove":
+            if let event = try? decoder.decode(EventSubChannelPointsCustomReward.self, from: data) {
+                return .channelPointsCustomRewardRemove(event)
+            }
+        case "channel.channel_points_automatic_reward_redemption.add":
+            if let event = try? decoder.decode(EventSubChannelPointsAutomaticRewardRedemption.self, from: data) {
+                return .channelPointsAutomaticRewardRedemptionAdd(event)
+            }
         case "channel.chat.clear":
             if let event = try? decoder.decode(EventSubChatClear.self, from: data) {
                 return .chatClear(event)
@@ -107,9 +148,25 @@ public enum EventSubEvent: Sendable {
             if let event = try? decoder.decode(EventSubChatMessageDelete.self, from: data) {
                 return .chatMessageDelete(event)
             }
+        case "channel.chat.notification":
+            if let event = try? decoder.decode(EventSubChatNotification.self, from: data) {
+                return .chatNotification(event)
+            }
+        case "channel.chat.user_message_hold":
+            if let event = try? decoder.decode(EventSubChatUserMessageModeration.self, from: data) {
+                return .chatUserMessageHold(event)
+            }
+        case "channel.chat.user_message_update":
+            if let event = try? decoder.decode(EventSubChatUserMessageModeration.self, from: data) {
+                return .chatUserMessageUpdate(event)
+            }
         case "channel.chat_settings.update":
             if let event = try? decoder.decode(EventSubChatSettingsUpdate.self, from: data) {
                 return .chatSettingsUpdate(event)
+            }
+        case "channel.moderate":
+            if let event = try? decoder.decode(EventSubModerate.self, from: data) {
+                return .moderate(event)
             }
         case "channel.subscription.end":
             if let event = try? decoder.decode(EventSubSubscriptionEnd.self, from: data) {
@@ -122,6 +179,74 @@ public enum EventSubEvent: Sendable {
         case "channel.subscription.message":
             if let event = try? decoder.decode(EventSubSubscriptionMessage.self, from: data) {
                 return .subscriptionMessage(event)
+            }
+        case "channel.poll.begin":
+            if let event = try? decoder.decode(EventSubPoll.self, from: data) {
+                return .pollBegin(event)
+            }
+        case "channel.poll.progress":
+            if let event = try? decoder.decode(EventSubPoll.self, from: data) {
+                return .pollProgress(event)
+            }
+        case "channel.poll.end":
+            if let event = try? decoder.decode(EventSubPoll.self, from: data) {
+                return .pollEnd(event)
+            }
+        case "channel.prediction.begin":
+            if let event = try? decoder.decode(EventSubPrediction.self, from: data) {
+                return .predictionBegin(event)
+            }
+        case "channel.prediction.progress":
+            if let event = try? decoder.decode(EventSubPrediction.self, from: data) {
+                return .predictionProgress(event)
+            }
+        case "channel.prediction.lock":
+            if let event = try? decoder.decode(EventSubPrediction.self, from: data) {
+                return .predictionLock(event)
+            }
+        case "channel.prediction.end":
+            if let event = try? decoder.decode(EventSubPrediction.self, from: data) {
+                return .predictionEnd(event)
+            }
+        case "channel.goal.begin":
+            if let event = try? decoder.decode(EventSubGoal.self, from: data) {
+                return .goalBegin(event)
+            }
+        case "channel.goal.progress":
+            if let event = try? decoder.decode(EventSubGoal.self, from: data) {
+                return .goalProgress(event)
+            }
+        case "channel.goal.end":
+            if let event = try? decoder.decode(EventSubGoal.self, from: data) {
+                return .goalEnd(event)
+            }
+        case "channel.hype_train.begin":
+            if let event = try? decoder.decode(EventSubHypeTrain.self, from: data) {
+                return .hypeTrainBegin(event)
+            }
+        case "channel.hype_train.progress":
+            if let event = try? decoder.decode(EventSubHypeTrain.self, from: data) {
+                return .hypeTrainProgress(event)
+            }
+        case "channel.hype_train.end":
+            if let event = try? decoder.decode(EventSubHypeTrain.self, from: data) {
+                return .hypeTrainEnd(event)
+            }
+        case "channel.charity_campaign.donate":
+            if let event = try? decoder.decode(EventSubCharityDonation.self, from: data) {
+                return .charityCampaignDonate(event)
+            }
+        case "channel.charity_campaign.start":
+            if let event = try? decoder.decode(EventSubCharityCampaign.self, from: data) {
+                return .charityCampaignStart(event)
+            }
+        case "channel.charity_campaign.progress":
+            if let event = try? decoder.decode(EventSubCharityCampaign.self, from: data) {
+                return .charityCampaignProgress(event)
+            }
+        case "channel.charity_campaign.stop":
+            if let event = try? decoder.decode(EventSubCharityCampaign.self, from: data) {
+                return .charityCampaignStop(event)
             }
         case "channel.unban_request.create":
             if let event = try? decoder.decode(EventSubUnbanRequest.self, from: data) {

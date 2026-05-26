@@ -285,6 +285,179 @@ final class EventSubMessageTests: XCTestCase {
         XCTAssertEqual(warning.reason, "Please follow chat rules")
     }
 
+    func test_decodeTypedCreatorEngagementEvents() throws {
+        let pollJSON = """
+        {
+            "id": "poll-id",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "title": "Choose the next game",
+            "choices": [
+                { "id": "choice-1", "title": "Game A", "votes": 10, "channel_points_votes": 5, "bits_votes": 0 }
+            ],
+            "bits_voting": { "is_enabled": false, "amount_per_vote": 0 },
+            "channel_points_voting": { "is_enabled": true, "amount_per_vote": 100 },
+            "status": "completed",
+            "duration_seconds": 120,
+            "started_at": "2020-07-15T17:16:03.17106713Z",
+            "ended_at": "2020-07-15T17:18:03.17106713Z"
+        }
+        """.data(using: .utf8)!
+
+        let predictionJSON = """
+        {
+            "id": "prediction-id",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "title": "Will this work?",
+            "outcomes": [
+                {
+                    "id": "outcome-1",
+                    "title": "Yes",
+                    "color": "blue",
+                    "users": 2,
+                    "channel_points": 500,
+                    "top_predictors": [
+                        {
+                            "user_id": "9001",
+                            "user_login": "viewer",
+                            "user_name": "Viewer",
+                            "channel_points_won": 1000,
+                            "channel_points_used": 500
+                        }
+                    ]
+                }
+            ],
+            "winning_outcome_id": "outcome-1",
+            "status": "resolved",
+            "started_at": "2020-07-15T17:16:03.17106713Z",
+            "locks_at": "2020-07-15T17:20:03.17106713Z",
+            "locked_at": "2020-07-15T17:20:03.17106713Z",
+            "ended_at": "2020-07-15T17:30:03.17106713Z"
+        }
+        """.data(using: .utf8)!
+
+        let goalJSON = """
+        {
+            "id": "goal-id",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "type": "subscription",
+            "description": "Sub goal",
+            "current_amount": 42,
+            "target_amount": 100,
+            "started_at": "2020-07-15T17:16:03.17106713Z",
+            "ended_at": null,
+            "is_achieved": false
+        }
+        """.data(using: .utf8)!
+
+        let pollEvent = EventSubEvent.decode(type: "channel.poll.end", payload: pollJSON)
+        let predictionEvent = EventSubEvent.decode(type: "channel.prediction.end", payload: predictionJSON)
+        let goalEvent = EventSubEvent.decode(type: "channel.goal.progress", payload: goalJSON)
+
+        guard case .pollEnd(let poll) = pollEvent else {
+            return XCTFail("Expected .pollEnd")
+        }
+        XCTAssertEqual(poll.title, "Choose the next game")
+        XCTAssertEqual(poll.choices.first?.title, "Game A")
+
+        guard case .predictionEnd(let prediction) = predictionEvent else {
+            return XCTFail("Expected .predictionEnd")
+        }
+        XCTAssertEqual(prediction.winningOutcomeId, "outcome-1")
+        XCTAssertEqual(prediction.outcomes.first?.topPredictors?.first?.userName, "Viewer")
+
+        guard case .goalProgress(let goal) = goalEvent else {
+            return XCTFail("Expected .goalProgress")
+        }
+        XCTAssertEqual(goal.currentAmount, 42)
+    }
+
+    func test_decodeTypedChatModerationAndCharityEvents() throws {
+        let notificationJSON = """
+        {
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "chatter_user_id": "9001",
+            "chatter_user_login": "viewer",
+            "chatter_user_name": "Viewer",
+            "chatter_is_anonymous": false,
+            "color": "#00FF7F",
+            "badges": [],
+            "system_message": "Viewer subscribed.",
+            "message_id": "message-id",
+            "message": { "text": "Nice", "fragments": [] },
+            "notice_type": "sub",
+            "sub": { "sub_tier": "1000", "is_prime": false, "duration_months": 1 }
+        }
+        """.data(using: .utf8)!
+
+        let moderateJSON = """
+        {
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "moderator_user_id": "4242",
+            "moderator_user_login": "mod_user",
+            "moderator_user_name": "Mod_User",
+            "action": "ban",
+            "user_id": "9001",
+            "user_login": "viewer",
+            "user_name": "Viewer",
+            "ban": {
+                "user_id": "9001",
+                "user_login": "viewer",
+                "user_name": "Viewer",
+                "reason": "Spam"
+            }
+        }
+        """.data(using: .utf8)!
+
+        let charityJSON = """
+        {
+            "id": "campaign-id",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cool_user",
+            "broadcaster_user_name": "Cool_User",
+            "charity_name": "Nice Charity",
+            "charity_description": "Helping people",
+            "charity_logo": "https://static.example/logo.png",
+            "charity_website": "https://example.com",
+            "current_amount": { "value": 5000, "decimal_places": 2, "currency": "USD" },
+            "target_amount": { "value": 10000, "decimal_places": 2, "currency": "USD" },
+            "started_at": "2020-07-15T17:16:03.17106713Z",
+            "stopped_at": null
+        }
+        """.data(using: .utf8)!
+
+        let notificationEvent = EventSubEvent.decode(type: "channel.chat.notification", payload: notificationJSON)
+        let moderateEvent = EventSubEvent.decode(type: "channel.moderate", payload: moderateJSON)
+        let charityEvent = EventSubEvent.decode(type: "channel.charity_campaign.progress", payload: charityJSON)
+
+        guard case .chatNotification(let notification) = notificationEvent else {
+            return XCTFail("Expected .chatNotification")
+        }
+        XCTAssertEqual(notification.noticeType, "sub")
+        XCTAssertEqual(notification.sub?.subTier, .tier1)
+
+        guard case .moderate(let moderate) = moderateEvent else {
+            return XCTFail("Expected .moderate")
+        }
+        XCTAssertEqual(moderate.action, "ban")
+        XCTAssertEqual(moderate.ban?.reason, "Spam")
+
+        guard case .charityCampaignProgress(let charity) = charityEvent else {
+            return XCTFail("Expected .charityCampaignProgress")
+        }
+        XCTAssertEqual(charity.charityName, "Nice Charity")
+        XCTAssertEqual(charity.currentAmount.value, 5000)
+    }
+
     func test_unknownEventDecodeFallsBackToRawPayload() {
         let data = #"{"future":true}"#.data(using: .utf8)!
         let event = EventSubEvent.decode(type: "channel.future", payload: data)

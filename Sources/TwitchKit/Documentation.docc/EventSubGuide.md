@@ -41,6 +41,6 @@ for await event in eventSub.events {
 
 ## Known And Unknown Events
 
-TwitchKit exposes dedicated Swift models for high-value EventSub payloads such as chat messages, stream state, subscriptions, moderation, channel points redemptions, warnings, shield mode, and shoutouts.
+TwitchKit exposes dedicated Swift models for high-value EventSub payloads such as chat messages, chat notifications, stream state, subscriptions, moderation, channel points, polls, predictions, goals, Hype Train, charity campaigns, warnings, shield mode, and shoutouts.
 
 When TwitchKit recognizes the EventSub subscription type but does not yet expose a dedicated field-level model, it returns ``TwitchKit/EventSubEvent/known(_:)`` with an ``TwitchKit/EventSubKnownEventType`` and the original JSON payload. ``TwitchKit/EventSubEvent/unknown(type:payload:)`` is reserved for future Twitch subscription types that the SDK does not recognize yet.

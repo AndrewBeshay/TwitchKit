@@ -1,6 +1,8 @@
 # TwitchKit
 
 [![CI](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml/badge.svg)](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml)
+[![Swift Package Index](https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/AndrewBeshay/TwitchKit/badge?type=swift-versions)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
+[![SPI Platforms](https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/AndrewBeshay/TwitchKit/badge?type=platforms)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
 ![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
 ![Platforms](https://img.shields.io/badge/platforms-iOS%2026%20%7C%20macOS%2015-lightgrey.svg)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -21,7 +23,7 @@ The package is currently pre-1.0. It provides typed authentication, token storag
 Add TwitchKit as a Swift Package dependency:
 
 ```swift
-.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0-beta.1")
+.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0-beta.2")
 ```
 
 Then add the product to your target:
@@ -160,6 +162,37 @@ for await event in twitch.eventSub.events {
 ```
 
 EventSub reconnects automatically and re-creates desired subscriptions after a full disconnect. Duplicate EventSub messages are ignored by message ID.
+
+## Supported APIs
+
+### Helix
+
+| Area | Coverage |
+| --- | --- |
+| Users | Authenticated user, users by ID/login |
+| Channels | Channel info, channel updates, followers, followed channels, editors, content classification labels |
+| Streams and games | Streams, stream lookup, stream key, top games, games by ID/name/IGDB ID |
+| Chat | Global/channel badges, global/channel emotes, emote sets, user emotes, chatters, chat settings, shared chat sessions, announcements, shoutouts, pinned messages, user chat colors, Send Chat Message |
+| Moderation | AutoMod status/settings, bans/timeouts, unban requests, blocked terms, delete chat message, moderated channels, moderators, VIPs, Shield Mode, warnings, suspicious users |
+| EventSub management | Create/list/delete subscriptions, WebSocket/webhook/conduit transports, batching flag |
+| Creator tools | Schedules, charity campaigns/donations, Hype Train status, polls, predictions, raids, stream markers, goals |
+| Channel points | Custom rewards and custom reward redemptions |
+| Media | Clips, clip downloads, videos, video deletion |
+| Subscriptions | Broadcaster subscriptions and user subscription checks |
+
+### EventSub
+
+| Area | Subscription builders | Typed notification payloads |
+| --- | --- | --- |
+| Chat | Chat messages, notifications, clear events, message deletion, chat settings, user message hold/update, shared chat sessions | Chat messages, notifications, clear events, message deletion, chat settings, user message hold/update |
+| Subscriptions | Subscribe, end, gift, message | Subscribe, end, gift, message |
+| Moderation | Ban, unban, moderator add/remove, moderate, unban requests, VIP add/remove, warnings, Shield Mode, suspicious users | Ban, unban, moderator add/remove, moderate, unban requests, VIP add/remove, warnings, Shield Mode |
+| Channel points | Automatic redemptions, custom rewards, custom reward redemptions, power-up redemptions | Automatic redemptions, custom rewards, custom reward redemptions |
+| Creator engagement | Polls, predictions, goals, Hype Train, charity campaigns/donations, raids, shoutouts, follows, cheers | Polls, predictions, goals, Hype Train, charity campaigns/donations, raids, shoutouts, follows, cheers |
+| Streams and users | Stream online/offline, user authorization grant/revoke, user update, whispers | Stream online/offline |
+| Platform/specialized | AutoMod, conduits, drops, extension bits, Guest Star | Known-type raw fallback |
+
+Known EventSub subscription types that do not yet have dedicated field-level models decode as `.known(EventSubKnownEvent)` with the original JSON payload preserved. Future Twitch types decode as `.unknown(type:payload:)`.
 
 ## OAuth Support
 

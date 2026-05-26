@@ -210,20 +210,70 @@ struct TwitchKitSmokeTestCLI {
             "reward redemption add: \(redemption.reward.title) by \(redemption.userName)"
         case .channelPointsCustomRewardRedemptionUpdate(let redemption):
             "reward redemption update: \(redemption.reward.title) is \(redemption.status.rawValue)"
+        case .channelPointsCustomRewardAdd(let reward):
+            "channel points reward added: \(reward.title)"
+        case .channelPointsCustomRewardUpdate(let reward):
+            "channel points reward updated: \(reward.title)"
+        case .channelPointsCustomRewardRemove(let reward):
+            "channel points reward removed: \(reward.title)"
+        case .channelPointsAutomaticRewardRedemptionAdd(let redemption):
+            "automatic reward redemption by \(redemption.userName)"
         case .chatClear:
             "chat cleared"
         case .chatClearUserMessages(let event):
             "chat messages cleared for \(event.targetUserName)"
         case .chatMessageDelete(let event):
             "chat message deleted: \(event.messageId)"
+        case .chatNotification(let notification):
+            "chat notification: \(notification.noticeType)"
+        case .chatUserMessageHold(let event):
+            "chat message held: \(event.messageId)"
+        case .chatUserMessageUpdate(let event):
+            "chat message moderation update: \(event.messageId)"
         case .chatSettingsUpdate:
             "chat settings updated"
+        case .moderate(let event):
+            "moderation action: \(event.action)"
         case .subscriptionEnd(let subscription):
             "subscription ended: \(subscription.userName)"
         case .subscriptionGift(let gift):
             "subscription gift: \(gift.total) gift(s)"
         case .subscriptionMessage(let subscription):
             "subscription message from \(subscription.userName)"
+        case .pollBegin(let poll):
+            "poll began: \(poll.title)"
+        case .pollProgress(let poll):
+            "poll progress: \(poll.title)"
+        case .pollEnd(let poll):
+            "poll ended: \(poll.title)"
+        case .predictionBegin(let prediction):
+            "prediction began: \(prediction.title)"
+        case .predictionProgress(let prediction):
+            "prediction progress: \(prediction.title)"
+        case .predictionLock(let prediction):
+            "prediction locked: \(prediction.title)"
+        case .predictionEnd(let prediction):
+            "prediction ended: \(prediction.title)"
+        case .goalBegin(let goal):
+            "goal began: \(goal.description)"
+        case .goalProgress(let goal):
+            "goal progress: \(goal.description)"
+        case .goalEnd(let goal):
+            "goal ended: \(goal.description)"
+        case .hypeTrainBegin(let hypeTrain):
+            "hype train began: level \(hypeTrain.level)"
+        case .hypeTrainProgress(let hypeTrain):
+            "hype train progress: level \(hypeTrain.level)"
+        case .hypeTrainEnd(let hypeTrain):
+            "hype train ended: level \(hypeTrain.level)"
+        case .charityCampaignDonate(let donation):
+            "charity donation: \(donation.userName)"
+        case .charityCampaignStart(let campaign):
+            "charity campaign started: \(campaign.charityName)"
+        case .charityCampaignProgress(let campaign):
+            "charity campaign progress: \(campaign.charityName)"
+        case .charityCampaignStop(let campaign):
+            "charity campaign stopped: \(campaign.charityName)"
         case .unbanRequestCreate(let request):
             "unban request created by \(request.userName)"
         case .unbanRequestResolve(let request):

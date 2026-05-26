@@ -4,6 +4,14 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [0.2.0-beta.2] - 2026-05-26
+
+### Added
+
+- Added typed EventSub notification payloads for chat notifications, user message hold/update, channel moderation actions, channel points reward changes, automatic reward redemptions, polls, predictions, goals, Hype Train, charity campaigns, and charity donations.
+- Added README support tables for Helix and EventSub coverage.
+- Added Swift Package Index badges and `.spi.yml` documentation target configuration.
+
 ## [0.2.0-beta.1] - 2026-05-26
 
 ### Added
