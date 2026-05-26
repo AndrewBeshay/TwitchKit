@@ -4,6 +4,13 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [0.2.0-beta.4] - 2026-05-26
+
+### Changed
+
+- Lowered declared platform requirements to iOS 16 and macOS 13 without code changes.
+- Renamed the smoke-test executable source away from `main.swift` so Xcode package builds can compile the `@main` entry point on iOS.
+
 ## [0.2.0-beta.3] - 2026-05-26
 
 ### Added
@@ -119,5 +126,5 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 ### Notes
 
 - This is an alpha prerelease. Public APIs may change before `1.0.0`.
-- The package currently targets Swift 6.2, iOS 26, and macOS 15.
+- The package currently targets Swift 6.2, iOS 16, and macOS 13.
 - TwitchKit currently covers a focused subset of Helix and EventSub. More endpoints and typed EventSub subscriptions are planned.

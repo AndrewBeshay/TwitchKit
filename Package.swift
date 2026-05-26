@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "TwitchKit",
-    platforms: [.iOS(.v26), .macOS(.v15)],
+    platforms: [.iOS(.v16), .macOS(.v13)],
     products: [
         .library(name: "TwitchKit", targets: ["TwitchKit"]),
         .executable(name: "TwitchKitSmokeTest", targets: ["TwitchKitSmokeTest"]),

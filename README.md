@@ -15,15 +15,15 @@ The package is currently pre-1.0. It provides typed authentication, token storag
 ## Requirements
 
 - Swift 6.2 or newer
-- iOS 26 or newer
-- macOS 15 or newer
+- iOS 16 or newer
+- macOS 13 or newer
 
 ## Installation
 
 Add TwitchKit as a Swift Package dependency:
 
 ```swift
-.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0-beta.3")
+.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.0-beta.4")
 ```
 
 Then add the product to your target:
