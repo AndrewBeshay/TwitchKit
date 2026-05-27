@@ -14,6 +14,7 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 ### Changed
 
 - Promoted `0.2.0` to the first non-prerelease package release.
+- Lowered the Swift tools requirement from 6.2 to 6.0.
 
 ## [0.2.0-beta.4] - 2026-05-26
 

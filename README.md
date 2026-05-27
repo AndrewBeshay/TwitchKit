@@ -14,7 +14,7 @@ The package is currently pre-1.0. It provides typed authentication, token storag
 
 ## Requirements
 
-- Swift 6.2 or newer
+- Swift 6.0 or newer
 - iOS 16 or newer
 - macOS 13 or newer
 
