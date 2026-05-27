@@ -163,6 +163,49 @@ for await event in twitch.eventSub.events {
 
 EventSub reconnects automatically and re-creates desired subscriptions after a full disconnect. Duplicate EventSub messages are ignored by message ID.
 
+`subscribe(_:)` returns the `EventSubSubscriptionRecord` created by Twitch, including the subscription ID. Keep that ID if you want to remove the subscription later:
+
+```swift
+let record = try await twitch.eventSub.subscribe(
+    .makeChannelChatMessage(
+        broadcasterID: "<#Broadcaster ID#>",
+        userID: "<#User ID#>"
+    )
+)
+
+try await twitch.eventSub.unsubscribe(id: record.id)
+```
+
+You can also manage EventSub subscriptions directly through Helix:
+
+```swift
+let page = try await twitch.api.fetchEventSubSubscriptionsPage(
+    filter: .status(.enabled)
+)
+
+try await twitch.api.deleteEventSubSubscription(id: page.data[0].id)
+
+let deletedCount = try await twitch.api.deleteAllEventSubSubscriptions(
+    filter: .status(.webhookCallbackVerificationPending)
+)
+```
+
+### EventSub Webhooks
+
+For webhook transports, verify Twitch's signature before decoding or acting on a notification. Pass the exact raw request body bytes you received from your HTTP server:
+
+```swift
+let verifier = EventSubWebhookVerifier(secret: eventSubSecret)
+let isValid = verifier.isValid(
+    messageID: request.headers["Twitch-Eventsub-Message-Id"],
+    timestamp: request.headers["Twitch-Eventsub-Message-Timestamp"],
+    body: requestBody,
+    signature: request.headers["Twitch-Eventsub-Message-Signature"]
+)
+
+let challenge = try EventSubWebhookVerifier.challenge(from: requestBody)
+```
+
 ## Supported APIs
 
 ### Helix
@@ -174,7 +217,7 @@ EventSub reconnects automatically and re-creates desired subscriptions after a f
 | Streams and games | Streams, stream lookup, stream key, top games, games by ID/name/IGDB ID |
 | Chat | Global/channel badges, global/channel emotes, emote sets, user emotes, chatters, chat settings, shared chat sessions, announcements, shoutouts, pinned messages, user chat colors, Send Chat Message |
 | Moderation | AutoMod status/settings, bans/timeouts, unban requests, blocked terms, delete chat message, moderated channels, moderators, VIPs, Shield Mode, warnings, suspicious users |
-| EventSub management | Create/list/delete subscriptions, WebSocket/webhook/conduit transports, batching flag |
+| EventSub management | Create/list/delete subscriptions, bulk cleanup helper, WebSocket/webhook/conduit transports, batching flag |
 | Creator tools | Schedules, charity campaigns/donations, Hype Train status, polls, predictions, raids, stream markers, goals |
 | Channel points | Custom rewards and custom reward redemptions |
 | Media | Clips, clip downloads, videos, video deletion |
@@ -236,6 +279,46 @@ Use `TwitchAuth.defaultScopes` for the small starter set used by TwitchKit conve
 
 Request only the scopes your app needs. Twitch warns that requesting unnecessary scopes can put API access at risk.
 
+### Common Scopes
+
+| Use case | Typical scopes |
+| --- | --- |
+| Read authenticated user email | `.userReadEmail` |
+| Read chat through Helix/EventSub | `.userReadChat` |
+| Send chat messages | `.userWriteChat` |
+| Subscribe to `channel.chat.message` over EventSub | `.userReadChat`, `.userBot` or broadcaster/moderator chat permissions depending on your app model |
+| Read chatters | `.moderatorReadChatters` |
+| Update channel title/category | `.channelManageBroadcast` |
+| Read or manage channel points rewards | `.channelReadRedemptions`, `.channelManageRedemptions` |
+| Moderate chat | `.moderatorManageBannedUsers`, `.moderatorManageChatMessages`, `.moderatorReadChatters` |
+| Create polls or predictions | `.channelManagePolls`, `.channelManagePredictions` |
+| Read subscriptions/followers | `.channelReadSubscriptions`, `.moderatorReadFollowers` |
+
+Exact requirements vary by endpoint and whether the authenticated user is the broadcaster, moderator, or bot account, so check Twitch's endpoint docs before requesting production app review.
+
+## Smoke Test Example
+
+The package includes `TwitchKitSmokeTest`, a small command-line target for trying real Twitch API calls locally. It reads credentials from environment variables:
+
+```bash
+export TWITCH_CLIENT_ID="<#Client ID#>"
+export TWITCH_ACCESS_TOKEN="<#Access Token#>"
+export TWITCH_BROADCASTER_ID="<#Broadcaster/User ID#>"
+
+swift run TwitchKitSmokeTest all
+swift run TwitchKitSmokeTest eventsub-list
+swift run TwitchKitSmokeTest eventsub-connect
+```
+
+Side-effecting checks require explicit opt-in:
+
+```bash
+TWITCH_SMOKE_SEND_CHAT=1 swift run TwitchKitSmokeTest send-chat
+TWITCH_SMOKE_CLEANUP=1 swift run TwitchKitSmokeTest eventsub-cleanup
+```
+
+Use a development Twitch application and avoid checking tokens into source control.
+
 ## Status
 
 TwitchKit is pre-1.0 and the public API may change. Current coverage includes:
@@ -250,8 +333,8 @@ TwitchKit is pre-1.0 and the public API may change. Current coverage includes:
 Planned areas for expansion:
 
 - iOS OAuth example app
-- Server/platform-oriented Helix areas such as ads, analytics, extensions, drops, conduits, teams, tags, and user extension management
-- Broader API documentation and examples
+- More focused examples for common broadcaster, moderator, and chat-bot workflows
+- Continued DocC expansion as new Twitch API surfaces are added
 
 ## License
 

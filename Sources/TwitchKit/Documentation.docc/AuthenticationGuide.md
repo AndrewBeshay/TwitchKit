@@ -39,3 +39,20 @@ let token = try await auth.pollDeviceCode(authorization)
 ## Token Storage
 
 TwitchKit can store tokens through ``TwitchKit/TwitchTokenStore``. Apps that already have secure credential storage or a backend token exchange service can keep ownership of token persistence and pass access tokens into ``TwitchKit/TwitchClient`` with ``TwitchKit/InMemoryTokenStore`` or a custom store.
+
+## Common Scopes
+
+Request only the scopes your app needs. Twitch may reject or restrict applications that ask for broad permissions without a clear product reason.
+
+| Use case | Typical scopes |
+| --- | --- |
+| Read authenticated user email | `.userReadEmail` |
+| Read chat | `.userReadChat` |
+| Send chat messages | `.userWriteChat` |
+| Read current chatters | `.moderatorReadChatters` |
+| Update channel title/category | `.channelManageBroadcast` |
+| Manage channel points redemptions | `.channelManageRedemptions` |
+| Moderate chat | `.moderatorManageBannedUsers`, `.moderatorManageChatMessages` |
+| Create polls or predictions | `.channelManagePolls`, `.channelManagePredictions` |
+
+Exact scopes depend on the endpoint and the authenticated user's relationship to the broadcaster. Use ``TwitchKit/TwitchScope`` for known Twitch scope strings and raw-scope overloads when Twitch adds a new scope before TwitchKit has been updated.

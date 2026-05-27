@@ -1,24 +1,32 @@
 # EventSub
 
-Use ``TwitchKit/EventSubClient`` to receive Twitch EventSub notifications over WebSockets.
+Use ``TwitchKit/EventSubClient`` to receive Twitch EventSub notifications over WebSockets, or use ``TwitchKit/HelixClient`` to create and manage webhook/conduit subscriptions directly.
 
-## Connect
+## WebSocket Flow
+
+Connect first, then create subscriptions after Twitch sends the `session_welcome` message. ``TwitchKit/EventSubClient/connect(timeout:)`` waits for that welcome before returning.
 
 ```swift
 let eventSub = client.eventSub
 try await eventSub.connect()
-```
 
-After Twitch sends a welcome message, create subscriptions with ``TwitchKit/EventSubSubscription``:
-
-```swift
-try await eventSub.subscribe(
-    EventSubSubscription.Chat.message(
+let record = try await eventSub.subscribe(
+    .makeChannelChatMessage(
         broadcasterID: "<#Broadcaster ID#>",
         userID: "<#User ID#>"
     )
 )
+
+print("Created subscription:", record.id)
 ```
+
+Keep the returned subscription ID when your app needs to remove the subscription later:
+
+```swift
+try await eventSub.unsubscribe(id: record.id)
+```
+
+TwitchKit reconnects automatically after disconnects and re-creates the subscriptions you requested through ``TwitchKit/EventSubClient/subscribe(_:)``. Duplicate EventSub messages are ignored by message ID.
 
 ## Consume Events
 
@@ -29,6 +37,8 @@ for await event in eventSub.events {
         print(message.chatterUserName, message.message.text)
     case .ban(let ban):
         print("Banned:", ban.userName)
+    case .revocation(let revocation):
+        print("Subscription revoked:", revocation.status.rawValue)
     case .known(let event):
         print("Known EventSub payload:", event.type.rawValue)
     case .unknown(let type, _):
@@ -39,11 +49,66 @@ for await event in eventSub.events {
 }
 ```
 
-## Known And Unknown Events
+## Manage Subscriptions
 
-TwitchKit exposes dedicated Swift models for high-value EventSub payloads such as chat messages, chat notifications, stream state, subscriptions, moderation, channel points, polls, predictions, goals, Hype Train, charity campaigns, warnings, shield mode, and shoutouts.
+Use Helix when you need to inspect or clean up subscriptions created by your app:
 
-When TwitchKit recognizes the EventSub subscription type but does not yet expose a dedicated field-level model, it returns ``TwitchKit/EventSubEvent/known(_:)`` with an ``TwitchKit/EventSubKnownEventType`` and the original JSON payload. ``TwitchKit/EventSubEvent/unknown(type:payload:)`` is reserved for future Twitch subscription types that the SDK does not recognize yet.
+```swift
+let page = try await client.api.fetchEventSubSubscriptionsPage(
+    filter: .status(.enabled)
+)
+
+for subscription in page.data {
+    print(subscription.id, subscription.type, subscription.status.rawValue)
+}
+```
+
+Delete one subscription by ID:
+
+```swift
+try await client.api.deleteEventSubSubscription(id: "<#Subscription ID#>")
+```
+
+For development tools and cleanup jobs, delete every subscription matching a filter:
+
+```swift
+let deletedCount = try await client.api.deleteAllEventSubSubscriptions(
+    filter: .status(.webhookCallbackVerificationPending)
+)
+
+print("Deleted", deletedCount, "stale subscriptions")
+```
+
+Pass `nil` only when you intentionally want to delete all EventSub subscriptions visible to the authenticated app/token.
+
+## Webhook And Conduit Transports
+
+``TwitchKit/EventSubClient`` is for WebSocket delivery. For webhook and conduit delivery, call Helix directly with an explicit transport:
+
+```swift
+let record = try await client.api.createEventSubSubscription(
+    type: "channel.update",
+    version: "2",
+    condition: ["broadcaster_user_id": "<#Broadcaster ID#>"],
+    transport: .webhook(
+        callback: URL(string: "https://example.com/twitch/eventsub")!,
+        secret: "<#Shared Secret#>"
+    )
+)
+
+print(record.id)
+```
+
+Conduit subscriptions use the conduit ID returned by Twitch's conduit APIs:
+
+```swift
+try await client.api.createEventSubSubscription(
+    type: "channel.update",
+    version: "2",
+    condition: ["broadcaster_user_id": "<#Broadcaster ID#>"],
+    transport: .conduit(conduitID: "<#Conduit ID#>")
+)
+```
 
 ## Webhook Verification
 
@@ -64,3 +129,9 @@ When Twitch sends a webhook callback verification request, respond with the chal
 ```swift
 let challenge = try EventSubWebhookVerifier.challenge(from: requestBody)
 ```
+
+## Known And Unknown Events
+
+TwitchKit exposes dedicated Swift models for high-value EventSub payloads such as chat messages, chat notifications, stream state, subscriptions, moderation, channel points, polls, predictions, goals, Hype Train, charity campaigns, warnings, shield mode, and shoutouts.
+
+When TwitchKit recognizes the EventSub subscription type but does not yet expose a dedicated field-level model, it returns ``TwitchKit/EventSubEvent/known(_:)`` with an ``TwitchKit/EventSubKnownEventType`` and the original JSON payload. ``TwitchKit/EventSubEvent/unknown(type:payload:)`` is reserved for future Twitch subscription types that the SDK does not recognize yet.

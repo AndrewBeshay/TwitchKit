@@ -4,6 +4,18 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [Unreleased]
+
+### Added
+
+- Documented EventSub subscription record returns, unsubscribe flows, bulk cleanup helpers, and webhook signature verification.
+- Expanded DocC Helix examples for chat, moderation, channel points, clips/videos, polls/predictions, EventSub management, and pagination.
+- Added common Twitch scope guidance and smoke-test command examples to README and DocC.
+
+### Changed
+
+- Updated README status/planned-work language to match current Helix coverage.
+
 ## [0.2.1] - 2026-05-27
 
 ### Changed
