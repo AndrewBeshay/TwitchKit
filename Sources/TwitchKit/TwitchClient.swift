@@ -27,6 +27,7 @@ public final class TwitchClient: Sendable {
     ///   - requestConfiguration: Request-level behavior for Helix HTTP calls.
     ///   - retryPolicy: Automatic retry behavior for Helix HTTP calls.
     ///   - responseMetadataHandler: Optional callback invoked with metadata from successful Helix responses.
+    ///   - eventBufferingPolicy: Buffering policy for EventSub notifications when consumers are slower than Twitch delivery.
     ///   - isLive: Returns whether the channel is live, used to tune EventSub reconnect behavior.
     public init(
         clientId: String,
@@ -37,6 +38,7 @@ public final class TwitchClient: Sendable {
         requestConfiguration: HelixRequestConfiguration = .default,
         retryPolicy: HelixRetryPolicy = .default,
         responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)? = nil,
+        eventBufferingPolicy: AsyncStream<EventSubEvent>.Continuation.BufferingPolicy = .bufferingNewest(1_000),
         isLive: @escaping @Sendable () async -> Bool = { false }
     ) {
         self.clientId = clientId
@@ -61,6 +63,10 @@ public final class TwitchClient: Sendable {
         )
         self.auth = auth
         self.api = api
-        self.eventSub = EventSubClient(api: api, isLive: isLive)
+        self.eventSub = EventSubClient(
+            api: api,
+            isLive: isLive,
+            eventBufferingPolicy: eventBufferingPolicy
+        )
     }
 }

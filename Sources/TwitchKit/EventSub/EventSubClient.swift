@@ -19,16 +19,35 @@ public actor EventSubClient {
     private var keepaliveTimeout: Int = 10
     private var reconnectAttempts: Int = 0
     private var shouldReconnect = false
+    private var isConnecting = false
     private var desiredSubscriptions: Set<EventSubSubscription> = []
     private var activeSubscriptionsById: [String: EventSubSubscription] = [:]
     private var seenMessageIds: Set<String> = []
+    private var seenMessageIdOrder: [String] = []
 
     private static let websocketURL = URL(string: "wss://eventsub.wss.twitch.tv/ws")!
+    private static let maxSeenMessageIds = 4_096
 
-    public init(api: HelixClient, isLive: @escaping @Sendable () async -> Bool) {
+    public init(
+        api: HelixClient,
+        isLive: @escaping @Sendable () async -> Bool,
+        eventBufferingPolicy: AsyncStream<EventSubEvent>.Continuation.BufferingPolicy = .bufferingNewest(1_000)
+    ) {
         self.api = api
         self.isLive = isLive
-        (events, eventsContinuation) = AsyncStream.makeStream(of: EventSubEvent.self)
+        (events, eventsContinuation) = AsyncStream.makeStream(
+            of: EventSubEvent.self,
+            bufferingPolicy: eventBufferingPolicy
+        )
+    }
+
+    deinit {
+        reconnectTask?.cancel()
+        receiveTask?.cancel()
+        keepaliveTask?.cancel()
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        welcomeContinuation?.resume(throwing: HelixError.networkError("EventSub client deallocated"))
+        eventsContinuation.finish()
     }
 
     // MARK: - Public
@@ -37,7 +56,16 @@ public actor EventSubClient {
     private var welcomeContinuation: CheckedContinuation<Void, Error>?
 
     public func connect(timeout: Duration = .seconds(15)) async throws {
+        if sessionId != nil {
+            return
+        }
+        guard !isConnecting else {
+            throw HelixError.networkError("EventSub connection already in progress")
+        }
+
         shouldReconnect = true
+        isConnecting = true
+        defer { isConnecting = false }
         try await openConnection(to: Self.websocketURL, resetReconnectAttempts: true, timeout: timeout)
     }
 
@@ -87,6 +115,7 @@ public actor EventSubClient {
         webSocketTask = nil
         sessionId = nil
         activeSubscriptionsById.removeAll()
+        clearSeenMessageIds()
         welcomeContinuation?.resume(throwing: HelixError.networkError("EventSub disconnected"))
         welcomeContinuation = nil
     }
@@ -166,7 +195,7 @@ public actor EventSubClient {
             return
         }
 
-        guard seenMessageIds.insert(envelope.metadata.messageId).inserted else {
+        guard rememberMessageId(envelope.metadata.messageId) else {
             logger.info("EventSub: ignoring duplicate message \(envelope.metadata.messageId)")
             return
         }
@@ -251,6 +280,7 @@ public actor EventSubClient {
         webSocketTask = nil
         sessionId = nil
         activeSubscriptionsById.removeAll()
+        clearSeenMessageIds()
 
         // If connect() is still waiting for session_welcome, fail it
         welcomeContinuation?.resume(throwing: HelixError.networkError("WebSocket disconnected before session_welcome"))
@@ -300,8 +330,31 @@ public actor EventSubClient {
             webSocketTask = nil
         }
         sessionId = nil
+        clearSeenMessageIds()
         welcomeContinuation?.resume(throwing: error)
         welcomeContinuation = nil
+    }
+
+    private func rememberMessageId(_ messageId: String) -> Bool {
+        let insertResult = seenMessageIds.insert(messageId)
+        guard insertResult.inserted else {
+            return false
+        }
+
+        seenMessageIdOrder.append(messageId)
+        let overflow = seenMessageIdOrder.count - Self.maxSeenMessageIds
+        if overflow > 0 {
+            for staleMessageId in seenMessageIdOrder.prefix(overflow) {
+                seenMessageIds.remove(staleMessageId)
+            }
+            seenMessageIdOrder.removeFirst(overflow)
+        }
+        return true
+    }
+
+    private func clearSeenMessageIds() {
+        seenMessageIds.removeAll(keepingCapacity: true)
+        seenMessageIdOrder.removeAll(keepingCapacity: true)
     }
 
     private func resubscribeAll() async throws {

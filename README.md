@@ -23,7 +23,7 @@ The package is currently pre-1.0. It provides typed authentication, token storag
 Add TwitchKit as a Swift Package dependency:
 
 ```swift
-.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.1")
+.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.2")
 ```
 
 Then add the product to your target:
@@ -161,7 +161,16 @@ for await event in twitch.eventSub.events {
 }
 ```
 
-EventSub reconnects automatically and re-creates desired subscriptions after a full disconnect. Duplicate EventSub messages are ignored by message ID.
+EventSub reconnects automatically and re-creates desired subscriptions after a full disconnect. Duplicate EventSub messages are ignored by message ID. TwitchKit bounds duplicate-message tracking and buffers the newest 1,000 EventSub notifications by default so a slow consumer cannot grow memory without limit.
+
+If your app needs a different EventSub buffering tradeoff, configure the client at initialization:
+
+```swift
+let twitch = TwitchClient(
+    clientId: "<#Client ID#>",
+    eventBufferingPolicy: .bufferingNewest(5_000)
+)
+```
 
 `subscribe(_:)` returns the `EventSubSubscriptionRecord` created by Twitch, including the subscription ID. Keep that ID if you want to remove the subscription later:
 

@@ -26,7 +26,16 @@ Keep the returned subscription ID when your app needs to remove the subscription
 try await eventSub.unsubscribe(id: record.id)
 ```
 
-TwitchKit reconnects automatically after disconnects and re-creates the subscriptions you requested through ``TwitchKit/EventSubClient/subscribe(_:)``. Duplicate EventSub messages are ignored by message ID.
+TwitchKit reconnects automatically after disconnects and re-creates the subscriptions you requested through ``TwitchKit/EventSubClient/subscribe(_:)``. Duplicate EventSub messages are ignored by message ID. Duplicate tracking is bounded, and EventSub notifications use `.bufferingNewest(1_000)` by default so a slow consumer cannot grow memory without limit.
+
+Configure the buffering policy on ``TwitchKit/TwitchClient`` when your app needs a different tradeoff:
+
+```swift
+let client = TwitchClient(
+    clientId: "<#Client ID#>",
+    eventBufferingPolicy: .bufferingNewest(5_000)
+)
+```
 
 ## Consume Events
 

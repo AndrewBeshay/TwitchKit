@@ -316,6 +316,16 @@ final class APIDesignTests: XCTestCase {
         XCTAssertEqual(unknown.rawValue, "future_type")
     }
 
+    func test_twitchClientAcceptsEventSubBufferingPolicy() {
+        let client = TwitchClient(
+            clientId: "client-id",
+            tokenStore: InMemoryTokenStore(),
+            eventBufferingPolicy: .bufferingNewest(10)
+        )
+
+        _ = client.eventSub
+    }
+
     func test_twitchStringEnumsDecodeUnknownValues() throws {
         let streamType = try JSONDecoder.twitch().decode(TwitchStreamType.self, from: Data(#""rerun""#.utf8))
         let transport = try JSONDecoder.twitch().decode(EventSubTransportMethod.self, from: Data(#""future_transport""#.utf8))

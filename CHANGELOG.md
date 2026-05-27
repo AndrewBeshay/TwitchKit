@@ -4,16 +4,20 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
-## [Unreleased]
+## [0.2.2] - 2026-05-28
 
 ### Added
 
-- Documented EventSub subscription record returns, unsubscribe flows, bulk cleanup helpers, and webhook signature verification.
+- Added configurable EventSub notification buffering through `TwitchClient(eventBufferingPolicy:)`.
+- Documented EventSub subscription record returns, unsubscribe flows, bulk cleanup helpers, webhook signature verification, and bounded EventSub event buffering.
 - Expanded DocC Helix examples for chat, moderation, channel points, clips/videos, polls/predictions, EventSub management, and pagination.
 - Added common Twitch scope guidance and smoke-test command examples to README and DocC.
 
 ### Changed
 
+- Bounded EventSub duplicate-message tracking to prevent unbounded memory growth during long-lived WebSocket sessions.
+- EventSub notifications now buffer the newest 1,000 events by default instead of using unbounded buffering.
+- Hardened EventSub WebSocket lifecycle cleanup and overlapping connect attempts.
 - Updated README status/planned-work language to match current Helix coverage.
 
 ## [0.2.1] - 2026-05-27
