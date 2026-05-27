@@ -4,6 +4,12 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [0.2.1] - 2026-05-27
+
+### Changed
+
+- Lowered the Swift tools requirement from 6.2 to 6.0 so Swift 6.0 and 6.1 toolchains can load the package.
+
 ## [0.2.0] - 2026-05-26
 
 ### Added
@@ -14,7 +20,6 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 ### Changed
 
 - Promoted `0.2.0` to the first non-prerelease package release.
-- Lowered the Swift tools requirement from 6.2 to 6.0.
 
 ## [0.2.0-beta.4] - 2026-05-26
 
