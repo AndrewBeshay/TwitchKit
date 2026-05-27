@@ -20,6 +20,7 @@ public actor EventSubClient {
     private var reconnectAttempts: Int = 0
     private var shouldReconnect = false
     private var desiredSubscriptions: Set<EventSubSubscription> = []
+    private var activeSubscriptionsById: [String: EventSubSubscription] = [:]
     private var seenMessageIds: Set<String> = []
 
     private static let websocketURL = URL(string: "wss://eventsub.wss.twitch.tv/ws")!
@@ -85,20 +86,30 @@ public actor EventSubClient {
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         sessionId = nil
+        activeSubscriptionsById.removeAll()
         welcomeContinuation?.resume(throwing: HelixError.networkError("EventSub disconnected"))
         welcomeContinuation = nil
     }
 
-    public func subscribe(_ subscription: EventSubSubscription) async throws {
+    @discardableResult
+    public func subscribe(_ subscription: EventSubSubscription) async throws -> EventSubSubscriptionRecord {
         desiredSubscriptions.insert(subscription)
-        try await createSubscription(subscription)
+        return try await createSubscription(subscription)
     }
 
-    public func subscribe(type: String, version: String, condition: [String: String]) async throws {
+    @discardableResult
+    public func subscribe(type: String, version: String, condition: [String: String]) async throws -> EventSubSubscriptionRecord {
         try await subscribe(EventSubSubscription(type: type, version: version, condition: condition))
     }
 
-    private func createSubscription(_ subscription: EventSubSubscription) async throws {
+    public func unsubscribe(id: String) async throws {
+        try await api.deleteEventSubSubscription(id: id)
+        if let subscription = activeSubscriptionsById.removeValue(forKey: id) {
+            desiredSubscriptions.remove(subscription)
+        }
+    }
+
+    private func createSubscription(_ subscription: EventSubSubscription) async throws -> EventSubSubscriptionRecord {
         guard let sessionId else {
             logger.error("❌ EventSub: no session ID — can't subscribe")
             throw HelixError.badRequest(
@@ -106,14 +117,16 @@ public actor EventSubClient {
             )
         }
         logger.info("📡 EventSub: subscribing to \(subscription.type) v\(subscription.version) with session \(sessionId)")
-        try await api.createEventSubSubscription(
+        let record = try await api.createEventSubSubscription(
             type: subscription.type,
             version: subscription.version,
             condition: subscription.condition,
             sessionId: sessionId,
             isBatchingEnabled: subscription.isBatchingEnabled
         )
+        activeSubscriptionsById[record.id] = subscription
         logger.info("✅ EventSub: subscribed to \(subscription.type)")
+        return record
     }
 
     // MARK: - Receive Loop
@@ -237,6 +250,7 @@ public actor EventSubClient {
         webSocketTask?.cancel(with: .abnormalClosure, reason: nil)
         webSocketTask = nil
         sessionId = nil
+        activeSubscriptionsById.removeAll()
 
         // If connect() is still waiting for session_welcome, fail it
         welcomeContinuation?.resume(throwing: HelixError.networkError("WebSocket disconnected before session_welcome"))
@@ -291,8 +305,9 @@ public actor EventSubClient {
     }
 
     private func resubscribeAll() async throws {
+        activeSubscriptionsById.removeAll()
         for subscription in desiredSubscriptions {
-            try await createSubscription(subscription)
+            _ = try await createSubscription(subscription)
         }
     }
 }
