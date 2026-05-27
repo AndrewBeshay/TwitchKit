@@ -160,8 +160,9 @@ public struct TwitchOAuthClient: Sendable {
         ])
 
         let (data, response) = try await httpClient.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw HelixError.unauthorized
+        guard let http = response as? HTTPURLResponse else { throw HelixError.invalidResponse }
+        guard http.statusCode == 200 else {
+            throw oauthError(from: data, status: http.statusCode, fallbackMessage: "Device code request failed")
         }
         return try JSONDecoder.twitch().decode(DeviceCodeAuthorization.self, from: data)
     }
@@ -171,16 +172,63 @@ public struct TwitchOAuthClient: Sendable {
         _ authorization: DeviceCodeAuthorization,
         scopes: [TwitchScope] = TwitchAuth.defaultScopeCases
     ) async throws -> OAuthToken {
-        try await pollDeviceCode(deviceCode: authorization.deviceCode, rawScopes: scopes.map(\.rawValue))
+        try await pollDeviceCode(
+            deviceCode: authorization.deviceCode,
+            rawScopes: scopes.map(\.rawValue),
+            interval: authorization.interval,
+            expiresIn: authorization.expiresIn
+        )
     }
 
     /// Polls Twitch for device-code completion using an explicit device code.
-    public func pollDeviceCode(deviceCode: String, scopes: [TwitchScope] = TwitchAuth.defaultScopeCases) async throws -> OAuthToken {
-        try await pollDeviceCode(deviceCode: deviceCode, rawScopes: scopes.map(\.rawValue))
+    public func pollDeviceCode(
+        deviceCode: String,
+        scopes: [TwitchScope] = TwitchAuth.defaultScopeCases,
+        interval: Int = 5,
+        expiresIn: Int = 600
+    ) async throws -> OAuthToken {
+        try await pollDeviceCode(
+            deviceCode: deviceCode,
+            rawScopes: scopes.map(\.rawValue),
+            interval: interval,
+            expiresIn: expiresIn
+        )
     }
 
     /// Polls Twitch for device-code completion using raw scope strings.
-    public func pollDeviceCode(deviceCode: String, rawScopes: [String]) async throws -> OAuthToken {
+    public func pollDeviceCode(
+        deviceCode: String,
+        rawScopes: [String],
+        interval: Int = 5,
+        expiresIn: Int = 600
+    ) async throws -> OAuthToken {
+        var pollingInterval = max(1, interval)
+        let deadline = Date().addingTimeInterval(TimeInterval(max(1, expiresIn)))
+
+        while true {
+            try Task.checkCancellation()
+            if Date() >= deadline {
+                throw HelixError.oauth(TwitchOAuthError(error: "expired_token", message: "Device code expired"))
+            }
+
+            do {
+                return try await exchangeDeviceCode(deviceCode: deviceCode, rawScopes: rawScopes)
+            } catch HelixError.oauth(let error) where error.error == "authorization_pending" {
+                try await Task.sleep(for: .seconds(pollingInterval))
+            } catch HelixError.oauth(let error) where error.error == "slow_down" {
+                pollingInterval += 5
+                try await Task.sleep(for: .seconds(pollingInterval))
+            }
+        }
+    }
+
+    /// Performs one device-code token exchange request.
+    public func exchangeDeviceCode(deviceCode: String, scopes: [TwitchScope] = TwitchAuth.defaultScopeCases) async throws -> OAuthToken {
+        try await exchangeDeviceCode(deviceCode: deviceCode, rawScopes: scopes.map(\.rawValue))
+    }
+
+    /// Performs one device-code token exchange request with raw scope strings.
+    public func exchangeDeviceCode(deviceCode: String, rawScopes: [String]) async throws -> OAuthToken {
         try await postTokenRequest(fields: [
             "client_id": clientId,
             "scope": rawScopes.joined(separator: " "),
@@ -219,10 +267,16 @@ public struct TwitchOAuthClient: Sendable {
         request.httpBody = twitchFormEncoded(fields)
 
         let (data, response) = try await httpClient.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw HelixError.unauthorized
+        guard let http = response as? HTTPURLResponse else { throw HelixError.invalidResponse }
+        guard http.statusCode == 200 else {
+            throw oauthError(from: data, status: http.statusCode, fallbackMessage: "OAuth token request failed")
         }
         return try JSONDecoder.twitch().decode(OAuthToken.self, from: data)
+    }
+
+    private func oauthError(from data: Data, status: Int, fallbackMessage: String) -> HelixError {
+        let decoded = try? JSONDecoder.twitch().decode(TwitchOAuthError.self, from: data)
+        return .oauth(decoded ?? TwitchOAuthError.fallback(status: status, message: fallbackMessage))
     }
 
     private func authorizationURL(

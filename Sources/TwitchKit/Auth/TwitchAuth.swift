@@ -315,15 +315,49 @@ public actor TwitchAuth: TwitchAccessTokenProvider {
     }
 
     /// Polls Twitch for device-code completion using an explicit device code.
-    public func pollDeviceCode(deviceCode: String, scopes: [TwitchScope] = TwitchAuth.defaultScopeCases) async throws -> OAuthToken {
-        let token = try await oauthClient.pollDeviceCode(deviceCode: deviceCode, scopes: scopes)
+    public func pollDeviceCode(
+        deviceCode: String,
+        scopes: [TwitchScope] = TwitchAuth.defaultScopeCases,
+        interval: Int = 5,
+        expiresIn: Int = 600
+    ) async throws -> OAuthToken {
+        let token = try await oauthClient.pollDeviceCode(
+            deviceCode: deviceCode,
+            scopes: scopes,
+            interval: interval,
+            expiresIn: expiresIn
+        )
         try await tokenProvider.setToken(token)
         return token
     }
 
     /// Polls Twitch for device-code completion using raw scope strings.
-    public func pollDeviceCode(deviceCode: String, rawScopes: [String]) async throws -> OAuthToken {
-        let token = try await oauthClient.pollDeviceCode(deviceCode: deviceCode, rawScopes: rawScopes)
+    public func pollDeviceCode(
+        deviceCode: String,
+        rawScopes: [String],
+        interval: Int = 5,
+        expiresIn: Int = 600
+    ) async throws -> OAuthToken {
+        let token = try await oauthClient.pollDeviceCode(
+            deviceCode: deviceCode,
+            rawScopes: rawScopes,
+            interval: interval,
+            expiresIn: expiresIn
+        )
+        try await tokenProvider.setToken(token)
+        return token
+    }
+
+    /// Performs one device-code token exchange request and stores the token on success.
+    public func exchangeDeviceCode(deviceCode: String, scopes: [TwitchScope] = TwitchAuth.defaultScopeCases) async throws -> OAuthToken {
+        let token = try await oauthClient.exchangeDeviceCode(deviceCode: deviceCode, scopes: scopes)
+        try await tokenProvider.setToken(token)
+        return token
+    }
+
+    /// Performs one device-code token exchange request with raw scope strings and stores the token on success.
+    public func exchangeDeviceCode(deviceCode: String, rawScopes: [String]) async throws -> OAuthToken {
+        let token = try await oauthClient.exchangeDeviceCode(deviceCode: deviceCode, rawScopes: rawScopes)
         try await tokenProvider.setToken(token)
         return token
     }

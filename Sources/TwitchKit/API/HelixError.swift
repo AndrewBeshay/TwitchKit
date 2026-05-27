@@ -12,6 +12,7 @@ public enum HelixError: Error, Sendable, LocalizedError {
     case conflict(TwitchAPIError)
     case unprocessable(TwitchAPIError)
     case rateLimited(HelixRateLimit)
+    case oauth(TwitchOAuthError)
 
     // Server errors
     case serverError(status: Int)
@@ -37,6 +38,7 @@ public enum HelixError: Error, Sendable, LocalizedError {
             } else {
                 "Rate limited"
             }
+        case .oauth(let error): "OAuth error: \(error.message)"
         case .serverError(let status): "Server error (HTTP \(status))"
         case .notAuthenticated: "Not authenticated — login required"
         case .missingClientSecret: "Client secret required for this OAuth flow"
@@ -103,6 +105,42 @@ public struct HelixResponseMetadata: Sendable, Equatable {
     public init(statusCode: Int, rateLimit: HelixRateLimit = HelixRateLimit()) {
         self.statusCode = statusCode
         self.rateLimit = rateLimit
+    }
+}
+
+
+/// Twitch OAuth error response shape.
+public struct TwitchOAuthError: Decodable, Sendable, Equatable {
+    public let error: String
+    public let status: Int?
+    public let message: String
+    public let errorDescription: String?
+
+    public init(error: String, status: Int? = nil, message: String? = nil, errorDescription: String? = nil) {
+        self.error = error
+        self.status = status
+        self.message = message ?? errorDescription ?? error
+        self.errorDescription = errorDescription
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case error
+        case status
+        case message
+        case errorDescription
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let error = try container.decodeIfPresent(String.self, forKey: .error) ?? "oauth_error"
+        let status = try container.decodeIfPresent(Int.self, forKey: .status)
+        let message = try container.decodeIfPresent(String.self, forKey: .message)
+        let errorDescription = try container.decodeIfPresent(String.self, forKey: .errorDescription)
+        self.init(error: error, status: status, message: message, errorDescription: errorDescription)
+    }
+
+    static func fallback(status: Int, message: String) -> Self {
+        Self(error: "HTTP \(status)", status: status, message: message)
     }
 }
 
@@ -255,6 +293,7 @@ public struct HelixPagedSequence<Element: Sendable>: AsyncSequence, Sendable {
     /// Iterator for a `HelixPagedSequence`.
     public struct Iterator: AsyncIteratorProtocol {
         private var buffer: [Element] = []
+        private var bufferIndex = 0
         private var nextCursor: String?
         private var shouldFetchPage = true
         private let fetchPage: @Sendable (String?) async throws -> HelixPage<Element>
@@ -269,13 +308,14 @@ public struct HelixPagedSequence<Element: Sendable>: AsyncSequence, Sendable {
 
         /// Returns the next element, fetching another page when needed.
         public mutating func next() async throws -> Element? {
-            while buffer.isEmpty {
+            while bufferIndex >= buffer.count {
                 guard shouldFetchPage else {
                     return nil
                 }
 
                 let page = try await fetchPage(nextCursor)
                 buffer = page.data
+                bufferIndex = 0
                 nextCursor = page.nextCursor
                 shouldFetchPage = page.nextCursor != nil
 
@@ -284,7 +324,13 @@ public struct HelixPagedSequence<Element: Sendable>: AsyncSequence, Sendable {
                 }
             }
 
-            return buffer.removeFirst()
+            let element = buffer[bufferIndex]
+            bufferIndex += 1
+            if bufferIndex == buffer.count {
+                buffer.removeAll(keepingCapacity: true)
+                bufferIndex = 0
+            }
+            return element
         }
     }
 }
@@ -315,23 +361,45 @@ extension JSONEncoder {
         encoder.keyEncodingStrategy = .convertToSnakeCase
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            try container.encode(formatter.string(from: date))
+            try container.encode(TwitchDateParser.string(from: date))
         }
         return encoder
     }
 }
 
 enum TwitchDateParser {
-    static func date(from value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) {
-            return date
-        }
+    private static let cache = TwitchISO8601DateFormatterCache()
 
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)
+    static func date(from value: String) -> Date? {
+        cache.date(from: value)
+    }
+
+    static func string(from date: Date) -> String {
+        cache.string(from: date)
+    }
+}
+
+private final class TwitchISO8601DateFormatterCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private let fractionalFormatter: ISO8601DateFormatter
+    private let standardFormatter: ISO8601DateFormatter
+
+    init() {
+        fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        standardFormatter = ISO8601DateFormatter()
+        standardFormatter.formatOptions = [.withInternetDateTime]
+    }
+
+    func date(from value: String) -> Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return fractionalFormatter.date(from: value) ?? standardFormatter.date(from: value)
+    }
+
+    func string(from date: Date) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return fractionalFormatter.string(from: date)
     }
 }

@@ -26,14 +26,16 @@ public struct EventSubWebhookVerifier: Sendable {
         signature: String,
         secret: String
     ) -> Bool {
-        var message = Data(messageID.utf8)
-        message.append(Data(timestamp.utf8))
+        var message = Data()
+        message.reserveCapacity(messageID.utf8.count + timestamp.utf8.count + body.count)
+        message.append(contentsOf: messageID.utf8)
+        message.append(contentsOf: timestamp.utf8)
         message.append(body)
 
         let key = SymmetricKey(data: Data(secret.utf8))
         let authenticationCode = HMAC<SHA256>.authenticationCode(for: message, using: key)
-        let expectedSignature = "sha256=" + authenticationCode.map { String(format: "%02x", $0) }.joined()
-        return constantTimeEqual(expectedSignature, signature.lowercased())
+        guard let signatureBytes = signatureBytes(from: signature) else { return false }
+        return constantTimeEqual(authenticationCode, signatureBytes)
     }
 
     /// Extracts the challenge string from a webhook callback verification request body.
@@ -41,17 +43,42 @@ public struct EventSubWebhookVerifier: Sendable {
         try JSONDecoder.twitch().decode(EventSubWebhookVerification.self, from: body).challenge
     }
 
-    private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
-        let lhsBytes = Array(lhs.utf8)
-        let rhsBytes = Array(rhs.utf8)
+    private static func signatureBytes(from signature: String) -> [UInt8]? {
+        let prefix = Array("sha256=".utf8)
+        let bytes = Array(signature.utf8)
+        guard bytes.count == prefix.count + SHA256.byteCount * 2 else { return nil }
 
-        guard lhsBytes.count == rhsBytes.count else {
-            return false
+        for index in prefix.indices where bytes[index] != prefix[index] {
+            return nil
         }
 
+        var result: [UInt8] = []
+        result.reserveCapacity(SHA256.byteCount)
+        var index = prefix.count
+        while index < bytes.count {
+            guard let high = hexNibble(bytes[index]),
+                  let low = hexNibble(bytes[index + 1]) else { return nil }
+            result.append((high << 4) | low)
+            index += 2
+        }
+        return result
+    }
+
+    private static func hexNibble(_ byte: UInt8) -> UInt8? {
+        switch byte {
+        case 48...57: byte - 48
+        case 65...70: byte - 55
+        case 97...102: byte - 87
+        default: nil
+        }
+    }
+
+    private static func constantTimeEqual(_ lhs: HMAC<SHA256>.MAC, _ rhs: [UInt8]) -> Bool {
+        guard rhs.count == SHA256.byteCount else { return false }
+
         var difference: UInt8 = 0
-        for index in lhsBytes.indices {
-            difference |= lhsBytes[index] ^ rhsBytes[index]
+        for (left, right) in zip(lhs, rhs) {
+            difference |= left ^ right
         }
         return difference == 0
     }

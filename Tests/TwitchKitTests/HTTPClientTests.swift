@@ -618,6 +618,45 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(body?.contains("client_secret=secret"), true)
     }
 
+    func test_authorizationCodeExchangePreservesOAuthErrorBody() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 400, body: #"{"error":"invalid_grant","error_description":"Invalid authorization code"}"#)
+        ])
+        let auth = makeAuth(clientSecret: "secret", httpClient: transport)
+
+        do {
+            try await auth.authenticate(withAuthorizationCode: "bad-code")
+            XCTFail("Expected OAuth error")
+        } catch let error as HelixError {
+            guard case .oauth(let oauthError) = error else {
+                return XCTFail("Expected oauth error, got \(error)")
+            }
+            XCTAssertEqual(oauthError.error, "invalid_grant")
+            XCTAssertEqual(oauthError.message, "Invalid authorization code")
+            XCTAssertEqual(oauthError.errorDescription, "Invalid authorization code")
+        }
+    }
+
+    func test_pollDeviceCodeWaitsThroughPendingStateAndReturnsToken() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 400, body: #"{"error":"authorization_pending","error_description":"Still waiting"}"#),
+            .json(statusCode: 200, body: #"{"access_token":"device-token","refresh_token":"refresh-token","expires_in":3600,"token_type":"bearer"}"#),
+        ])
+        let oauthClient = TwitchOAuthClient(clientId: "client-id", httpClient: transport)
+
+        let token = try await oauthClient.pollDeviceCode(
+            deviceCode: "device-code",
+            rawScopes: ["user:read:email"],
+            interval: 0,
+            expiresIn: 60
+        )
+
+        XCTAssertEqual(token.accessToken, "device-token")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(String(data: requests[0].httpBody ?? Data(), encoding: .utf8)?.contains("device_code=device-code"), true)
+    }
+
     func test_nonHTTPResponseThrowsInvalidResponseInsteadOfCrashing() async throws {
         let transport = MockHTTPClient(responses: [
             .nonHTTP(body: Data())

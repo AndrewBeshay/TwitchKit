@@ -36,6 +36,8 @@ print(authorization.verificationURI)
 let token = try await auth.pollDeviceCode(authorization)
 ```
 
+`pollDeviceCode(_:)` uses Twitch's returned polling interval, waits through `authorization_pending`, handles `slow_down`, and stops when the device code expires. Use `exchangeDeviceCode(deviceCode:scopes:)` when you intentionally want one token request instead of a polling loop. OAuth error bodies are surfaced as ``TwitchKit/HelixError/oauth(_:)`` so apps can inspect the Twitch error code and message.
+
 ## Token Storage
 
 TwitchKit can store tokens through ``TwitchKit/TwitchTokenStore``. Apps that already have secure credential storage or a backend token exchange service can keep ownership of token persistence and pass access tokens into ``TwitchKit/TwitchClient`` with ``TwitchKit/InMemoryTokenStore`` or a custom store.

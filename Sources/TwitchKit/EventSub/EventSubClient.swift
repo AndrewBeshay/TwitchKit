@@ -13,14 +13,16 @@ public actor EventSubClient {
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var sessionId: String?
-    private var receiveTask: Task<Void, Never>?
+    private var receiveTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var keepaliveTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    private var keepaliveDeadline: ContinuousClock.Instant?
     private var keepaliveTimeout: Int = 10
     private var reconnectAttempts: Int = 0
     private var shouldReconnect = false
     private var isConnecting = false
     private var desiredSubscriptions: Set<EventSubSubscription> = []
+    private var desiredSubscriptionsById: [String: EventSubSubscription] = [:]
     private var activeSubscriptionsById: [String: EventSubSubscription] = [:]
     private var seenMessageIds: Set<String> = []
     private var seenMessageIdOrder: [String] = []
@@ -43,7 +45,9 @@ public actor EventSubClient {
 
     deinit {
         reconnectTask?.cancel()
-        receiveTask?.cancel()
+        for task in receiveTasks.values {
+            task.cancel()
+        }
         keepaliveTask?.cancel()
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         welcomeContinuation?.resume(throwing: HelixError.networkError("EventSub client deallocated"))
@@ -84,7 +88,7 @@ public actor EventSubClient {
         if resetReconnectAttempts {
             reconnectAttempts = 0
         }
-        startReceiveLoop()
+        startReceiveLoop(for: task)
 
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in
@@ -107,10 +111,10 @@ public actor EventSubClient {
         shouldReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
-        receiveTask?.cancel()
-        receiveTask = nil
+        cancelReceiveTasks()
         keepaliveTask?.cancel()
         keepaliveTask = nil
+        keepaliveDeadline = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         sessionId = nil
@@ -122,8 +126,10 @@ public actor EventSubClient {
 
     @discardableResult
     public func subscribe(_ subscription: EventSubSubscription) async throws -> EventSubSubscriptionRecord {
+        let record = try await createSubscription(subscription)
         desiredSubscriptions.insert(subscription)
-        return try await createSubscription(subscription)
+        desiredSubscriptionsById[record.id] = subscription
+        return record
     }
 
     @discardableResult
@@ -132,10 +138,32 @@ public actor EventSubClient {
     }
 
     public func unsubscribe(id: String) async throws {
-        try await api.deleteEventSubSubscription(id: id)
-        if let subscription = activeSubscriptionsById.removeValue(forKey: id) {
-            desiredSubscriptions.remove(subscription)
+        let localSubscription = activeSubscriptionsById[id] ?? desiredSubscriptionsById[id]
+
+        do {
+            try await api.deleteEventSubSubscription(id: id)
+        } catch HelixError.notFound where localSubscription != nil {
+            // The remote subscription can already be gone after a lost WebSocket.
         }
+
+        activeSubscriptionsById.removeValue(forKey: id)
+        desiredSubscriptionsById.removeValue(forKey: id)
+        if let localSubscription {
+            desiredSubscriptions.remove(localSubscription)
+            desiredSubscriptionsById = desiredSubscriptionsById.filter { $0.value != localSubscription }
+            activeSubscriptionsById = activeSubscriptionsById.filter { $0.value != localSubscription }
+        }
+    }
+
+    public func unsubscribe(_ subscription: EventSubSubscription) async throws {
+        if let id = activeSubscriptionsById.first(where: { $0.value == subscription })?.key
+            ?? desiredSubscriptionsById.first(where: { $0.value == subscription })?.key {
+            try await unsubscribe(id: id)
+            return
+        }
+
+        desiredSubscriptions.remove(subscription)
+        desiredSubscriptionsById = desiredSubscriptionsById.filter { $0.value != subscription }
     }
 
     private func createSubscription(_ subscription: EventSubSubscription) async throws -> EventSubSubscriptionRecord {
@@ -160,30 +188,33 @@ public actor EventSubClient {
 
     // MARK: - Receive Loop
 
-    private func startReceiveLoop() {
+    private func startReceiveLoop(for task: URLSessionWebSocketTask) {
         logger.info("🔵 EventSub: starting receive loop")
-        receiveTask = Task { [weak self] in
-            guard let self else { return }
+        let taskId = ObjectIdentifier(task)
+        receiveTasks[taskId]?.cancel()
+        receiveTasks[taskId] = Task { [weak self, weak task] in
+            guard let self, let task else { return }
             while !Task.isCancelled {
-                guard let task = await self.webSocketTask else {
-                    logger.info("🔵 EventSub: no WebSocket task, exiting receive loop")
-                    return
-                }
                 do {
                     let message = try await task.receive()
-                    await self.handleMessage(message)
+                    await self.handleMessage(message, from: task)
                 } catch {
                     logger.error("❌ EventSub: receive error: \(error.localizedDescription)")
-                    if !Task.isCancelled {
-                        await self.handleDisconnect()
-                    }
+                    await self.receiveLoopDidEnd(for: task, error: error)
                     return
                 }
             }
         }
     }
 
-    private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
+    private func receiveLoopDidEnd(for task: URLSessionWebSocketTask, error: Error) {
+        receiveTasks.removeValue(forKey: ObjectIdentifier(task))
+        guard !Task.isCancelled else { return }
+        guard webSocketTask === task else { return }
+        handleDisconnect()
+    }
+
+    private func handleMessage(_ message: URLSessionWebSocketTask.Message, from task: URLSessionWebSocketTask) {
         guard case .string(let text) = message,
               let data = text.data(using: .utf8) else {
             logger.warning("⚠️ EventSub: received non-string message")
@@ -199,7 +230,7 @@ public actor EventSubClient {
         }
 
         guard rememberMessageId(envelope.metadata.messageId) else {
-            logger.info("EventSub: ignoring duplicate message \(envelope.metadata.messageId)")
+            logger.debug("EventSub: ignoring duplicate message \(envelope.metadata.messageId)")
             return
         }
 
@@ -208,30 +239,27 @@ public actor EventSubClient {
             sessionId = envelope.payload.session?.id
             keepaliveTimeout = envelope.payload.session?.keepaliveTimeoutSeconds ?? 10
             logger.info("🟢 EventSub: session_welcome — id=\(self.sessionId ?? "nil"), keepalive=\(self.keepaliveTimeout)s")
-            resetKeepaliveTimer()
+            updateKeepaliveDeadline()
             // Resume connect() — caller was waiting for session ID
             welcomeContinuation?.resume()
             welcomeContinuation = nil
 
         case "session_keepalive":
-            resetKeepaliveTimer()
+            updateKeepaliveDeadline()
 
         case "notification":
-            resetKeepaliveTimer()
+            updateKeepaliveDeadline()
             let subType = envelope.metadata.subscriptionType ?? "unknown"
-            logger.info("📨 EventSub: notification — \(subType)")
-            if let eventData = envelope.payload.event?.rawData {
-                let event = parseEvent(type: subType, data: eventData)
-                eventsContinuation.yield(event)
-            } else {
-                logger.warning("⚠️ EventSub: notification had no event data")
-            }
+            logger.debug("EventSub notification: \(subType)")
+            let event = parseNotificationEvent(type: subType, envelopeData: data)
+            eventsContinuation.yield(event)
 
         case "session_reconnect":
-            if let newUrl = envelope.payload.session?.reconnectUrl,
+            if webSocketTask === task,
+               let newUrl = envelope.payload.session?.reconnectUrl,
                let url = URL(string: newUrl) {
                 reconnectTask?.cancel()
-                reconnectTask = Task { await reconnectTo(url) }
+                reconnectTask = Task { await reconnectTo(url, replacing: task) }
             }
 
         case "revocation":
@@ -244,41 +272,70 @@ public actor EventSubClient {
         }
     }
 
-    private func parseEvent(type: String, data: Data) -> EventSubEvent {
-        EventSubEvent.decode(type: type, payload: data)
+    private func parseNotificationEvent(type: String, envelopeData: Data) -> EventSubEvent {
+        EventSubEvent.decodeNotification(type: type, envelope: envelopeData)
     }
 
     // MARK: - Keepalive
 
-    private func resetKeepaliveTimer() {
-        keepaliveTask?.cancel()
+    private func updateKeepaliveDeadline() {
+        keepaliveDeadline = ContinuousClock().now.advanced(by: .seconds(keepaliveTimeout + 5))
+        guard keepaliveTask == nil else { return }
+
         keepaliveTask = Task { [weak self] in
             guard let self else { return }
-            let timeout = await self.keepaliveTimeout
-            try? await Task.sleep(for: .seconds(timeout + 5)) // 5s grace period
-            if !Task.isCancelled {
-                await self.handleDisconnect()
+            await self.runKeepaliveWatchdog()
+        }
+    }
+
+    private func runKeepaliveWatchdog() async {
+        while !Task.isCancelled {
+            guard let deadline = keepaliveDeadline else {
+                keepaliveTask = nil
+                return
             }
+
+            let now = ContinuousClock().now
+            if now < deadline {
+                try? await ContinuousClock().sleep(until: deadline)
+                continue
+            }
+
+            keepaliveTask = nil
+            handleDisconnect()
+            return
         }
     }
 
     // MARK: - Reconnection
 
-    private func reconnectTo(_ url: URL) async {
-        guard shouldReconnect else { return }
-        let oldTask = webSocketTask
+    private func reconnectTo(_ url: URL, replacing oldTask: URLSessionWebSocketTask) async {
+        guard shouldReconnect, webSocketTask === oldTask else { return }
         let newTask = URLSession.shared.webSocketTask(with: url)
         webSocketTask = newTask
         newTask.resume()
-        receiveTask?.cancel()
-        startReceiveLoop()
-        oldTask?.cancel(with: .normalClosure, reason: nil)
+        startReceiveLoop(for: newTask)
+
+        do {
+            try await waitForWelcome(timeout: .seconds(15))
+            oldTask.cancel(with: .normalClosure, reason: nil)
+            cancelReceiveTask(for: oldTask)
+        } catch {
+            newTask.cancel(with: .abnormalClosure, reason: nil)
+            cancelReceiveTask(for: newTask)
+            if webSocketTask === newTask {
+                webSocketTask = oldTask
+            }
+            handleDisconnect()
+        }
     }
 
     private func handleDisconnect() {
         logger.warning("⚠️ EventSub: disconnected")
-        receiveTask?.cancel()
+        cancelReceiveTasks()
         keepaliveTask?.cancel()
+        keepaliveTask = nil
+        keepaliveDeadline = nil
         webSocketTask?.cancel(with: .abnormalClosure, reason: nil)
         webSocketTask = nil
         sessionId = nil
@@ -323,11 +380,23 @@ public actor EventSubClient {
         }
     }
 
+    private func waitForWelcome(timeout: Duration) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await self.waitForWelcome() }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw HelixError.networkError("Timed out waiting for EventSub session_welcome")
+            }
+            defer { group.cancelAll() }
+            try await group.next()
+        }
+    }
+
     private func cleanupFailedConnection(task: URLSessionWebSocketTask, error: Error) {
-        receiveTask?.cancel()
-        receiveTask = nil
+        cancelReceiveTasks()
         keepaliveTask?.cancel()
         keepaliveTask = nil
+        keepaliveDeadline = nil
         task.cancel(with: .abnormalClosure, reason: nil)
         if webSocketTask === task {
             webSocketTask = nil
@@ -363,7 +432,19 @@ public actor EventSubClient {
     private func resubscribeAll() async throws {
         activeSubscriptionsById.removeAll()
         for subscription in desiredSubscriptions {
-            _ = try await createSubscription(subscription)
+            let record = try await createSubscription(subscription)
+            desiredSubscriptionsById[record.id] = subscription
         }
+    }
+
+    private func cancelReceiveTask(for task: URLSessionWebSocketTask) {
+        receiveTasks.removeValue(forKey: ObjectIdentifier(task))?.cancel()
+    }
+
+    private func cancelReceiveTasks() {
+        for task in receiveTasks.values {
+            task.cancel()
+        }
+        receiveTasks.removeAll()
     }
 }

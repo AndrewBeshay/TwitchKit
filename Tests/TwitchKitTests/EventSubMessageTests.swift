@@ -89,6 +89,52 @@ final class EventSubMessageTests: XCTestCase {
         }
     }
 
+    func test_decodeNotificationEnvelopeDecodesTypedEventWithoutEventReencodingPath() throws {
+        let json = """
+        {
+            "metadata": {
+                "message_id": "notification-1",
+                "message_type": "notification",
+                "message_timestamp": "2023-07-19T15:00:00Z",
+                "subscription_type": "stream.online"
+            },
+            "payload": {
+                "subscription": {
+                    "id": "sub-id",
+                    "status": "enabled",
+                    "type": "stream.online",
+                    "version": "1",
+                    "condition": {
+                        "broadcaster_user_id": "1337"
+                    },
+                    "transport": {
+                        "method": "websocket",
+                        "session_id": "session-id"
+                    },
+                    "created_at": "2023-07-19T14:59:00Z",
+                    "cost": 0
+                },
+                "event": {
+                    "id": "9001",
+                    "broadcaster_user_id": "1337",
+                    "broadcaster_user_login": "cool_user",
+                    "broadcaster_user_name": "Cool_User",
+                    "type": "live",
+                    "started_at": "2020-10-11T10:11:12.123Z"
+                }
+            }
+        }
+        """.data(using: .utf8)!
+
+        let event = EventSubEvent.decodeNotification(type: "stream.online", envelope: json)
+
+        guard case .streamOnline(let stream) = event else {
+            return XCTFail("Expected .streamOnline")
+        }
+        XCTAssertEqual(stream.id, "9001")
+        XCTAssertEqual(stream.broadcasterUserId, "1337")
+    }
+
     func test_decodeTypedStreamOnlineEvent() throws {
         let json = """
         {
