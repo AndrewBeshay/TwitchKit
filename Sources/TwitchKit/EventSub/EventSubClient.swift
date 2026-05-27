@@ -190,8 +190,11 @@ public actor EventSubClient {
             return
         }
 
-        guard let envelope = try? JSONDecoder.twitch().decode(EventSubEnvelope.self, from: data) else {
-            logger.warning("⚠️ EventSub: failed to decode message: \(text.prefix(200))")
+        let envelope: EventSubEnvelope
+        do {
+            envelope = try JSONDecoder.twitch().decode(EventSubEnvelope.self, from: data)
+        } catch {
+            logger.warning("⚠️ EventSub: failed to decode message: \(eventSubDecodingErrorDescription(error), privacy: .public); JSON prefix: \(text.prefix(200), privacy: .public)")
             return
         }
 

@@ -1,4 +1,27 @@
 import Foundation
+import os
+
+private let eventSubMessageLogger = Logger(subsystem: "com.twitchkit", category: "eventsub")
+
+func eventSubDecodingErrorDescription(_ error: Error) -> String {
+    switch error {
+    case DecodingError.keyNotFound(let key, let context):
+        return "keyNotFound(\(eventSubCodingPath(context.codingPath + [key]))): \(context.debugDescription)"
+    case DecodingError.typeMismatch(let type, let context):
+        return "typeMismatch(\(type) at \(eventSubCodingPath(context.codingPath))): \(context.debugDescription)"
+    case DecodingError.valueNotFound(let type, let context):
+        return "valueNotFound(\(type) at \(eventSubCodingPath(context.codingPath))): \(context.debugDescription)"
+    case DecodingError.dataCorrupted(let context):
+        return "dataCorrupted(\(eventSubCodingPath(context.codingPath))): \(context.debugDescription)"
+    default:
+        return String(describing: error)
+    }
+}
+
+private func eventSubCodingPath(_ path: [CodingKey]) -> String {
+    guard !path.isEmpty else { return "<root>" }
+    return path.map(\.stringValue).joined(separator: ".")
+}
 
 /// Events emitted from the EventSub WebSocket to consumers.
 public enum EventSubEvent: Sendable {
@@ -88,324 +111,187 @@ public enum EventSubEvent: Sendable {
     static func decode(type: String, payload data: Data, decoder: JSONDecoder = .twitch()) -> Self {
         switch type {
         case "channel.chat.message":
-            if let msg = try? decoder.decode(ChatMessage.self, from: data) {
-                return .chatMessage(msg)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: ChatMessage.self, map: Self.chatMessage)
         case "channel.update":
-            if let event = try? decoder.decode(EventSubChannelUpdate.self, from: data) {
-                return .channelUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChannelUpdate.self, map: Self.channelUpdate)
         case "channel.follow":
-            if let follow = try? decoder.decode(TwitchFollow.self, from: data) {
-                return .follow(follow)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: TwitchFollow.self, map: Self.follow)
         case "channel.subscribe":
-            if let sub = try? decoder.decode(TwitchSubscription.self, from: data) {
-                return .subscription(sub)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: TwitchSubscription.self, map: Self.subscription)
         case "stream.online":
-            if let event = try? decoder.decode(EventSubStreamOnline.self, from: data) {
-                return .streamOnline(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubStreamOnline.self, map: Self.streamOnline)
         case "stream.offline":
-            if let event = try? decoder.decode(EventSubStreamOffline.self, from: data) {
-                return .streamOffline(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubStreamOffline.self, map: Self.streamOffline)
         case "automod.message.hold":
-            if let event = try? decoder.decode(EventSubAutoModMessage.self, from: data) {
-                return .automodMessageHold(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubAutoModMessage.self, map: Self.automodMessageHold)
         case "automod.message.update":
-            if let event = try? decoder.decode(EventSubAutoModMessage.self, from: data) {
-                return .automodMessageUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubAutoModMessage.self, map: Self.automodMessageUpdate)
         case "automod.settings.update":
-            if let event = try? decoder.decode(EventSubAutoModSettingsUpdate.self, from: data) {
-                return .automodSettingsUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubAutoModSettingsUpdate.self, map: Self.automodSettingsUpdate)
         case "automod.terms.update":
-            if let event = try? decoder.decode(EventSubAutoModTermsUpdate.self, from: data) {
-                return .automodTermsUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubAutoModTermsUpdate.self, map: Self.automodTermsUpdate)
         case "channel.bits.use":
-            if let event = try? decoder.decode(EventSubBitsUse.self, from: data) {
-                return .bitsUse(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubBitsUse.self, map: Self.bitsUse)
         case "channel.ad_break.begin":
-            if let event = try? decoder.decode(EventSubAdBreakBegin.self, from: data) {
-                return .adBreakBegin(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubAdBreakBegin.self, map: Self.adBreakBegin)
         case "channel.raid":
-            if let event = try? decoder.decode(EventSubRaid.self, from: data) {
-                return .raid(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubRaid.self, map: Self.raid)
         case "channel.cheer":
-            if let event = try? decoder.decode(EventSubCheer.self, from: data) {
-                return .cheer(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubCheer.self, map: Self.cheer)
         case "channel.ban":
-            if let event = try? decoder.decode(EventSubBan.self, from: data) {
-                return .ban(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubBan.self, map: Self.ban)
         case "channel.unban":
-            if let event = try? decoder.decode(EventSubUnban.self, from: data) {
-                return .unban(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubUnban.self, map: Self.unban)
         case "channel.moderator.add":
-            if let event = try? decoder.decode(EventSubModeratorChange.self, from: data) {
-                return .moderatorAdd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubModeratorChange.self, map: Self.moderatorAdd)
         case "channel.moderator.remove":
-            if let event = try? decoder.decode(EventSubModeratorChange.self, from: data) {
-                return .moderatorRemove(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubModeratorChange.self, map: Self.moderatorRemove)
         case "channel.channel_points_custom_reward_redemption.add":
-            if let event = try? decoder.decode(EventSubChannelPointsCustomRewardRedemption.self, from: data) {
-                return .channelPointsCustomRewardRedemptionAdd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChannelPointsCustomRewardRedemption.self, map: Self.channelPointsCustomRewardRedemptionAdd)
         case "channel.channel_points_custom_reward_redemption.update":
-            if let event = try? decoder.decode(EventSubChannelPointsCustomRewardRedemption.self, from: data) {
-                return .channelPointsCustomRewardRedemptionUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChannelPointsCustomRewardRedemption.self, map: Self.channelPointsCustomRewardRedemptionUpdate)
         case "channel.channel_points_custom_reward.add":
-            if let event = try? decoder.decode(EventSubChannelPointsCustomReward.self, from: data) {
-                return .channelPointsCustomRewardAdd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChannelPointsCustomReward.self, map: Self.channelPointsCustomRewardAdd)
         case "channel.channel_points_custom_reward.update":
-            if let event = try? decoder.decode(EventSubChannelPointsCustomReward.self, from: data) {
-                return .channelPointsCustomRewardUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChannelPointsCustomReward.self, map: Self.channelPointsCustomRewardUpdate)
         case "channel.channel_points_custom_reward.remove":
-            if let event = try? decoder.decode(EventSubChannelPointsCustomReward.self, from: data) {
-                return .channelPointsCustomRewardRemove(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChannelPointsCustomReward.self, map: Self.channelPointsCustomRewardRemove)
         case "channel.channel_points_automatic_reward_redemption.add":
-            if let event = try? decoder.decode(EventSubChannelPointsAutomaticRewardRedemption.self, from: data) {
-                return .channelPointsAutomaticRewardRedemptionAdd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChannelPointsAutomaticRewardRedemption.self, map: Self.channelPointsAutomaticRewardRedemptionAdd)
         case "channel.chat.clear":
-            if let event = try? decoder.decode(EventSubChatClear.self, from: data) {
-                return .chatClear(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChatClear.self, map: Self.chatClear)
         case "channel.chat.clear_user_messages":
-            if let event = try? decoder.decode(EventSubChatClearUserMessages.self, from: data) {
-                return .chatClearUserMessages(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChatClearUserMessages.self, map: Self.chatClearUserMessages)
         case "channel.chat.message_delete":
-            if let event = try? decoder.decode(EventSubChatMessageDelete.self, from: data) {
-                return .chatMessageDelete(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChatMessageDelete.self, map: Self.chatMessageDelete)
         case "channel.chat.notification":
-            if let event = try? decoder.decode(EventSubChatNotification.self, from: data) {
-                return .chatNotification(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChatNotification.self, map: Self.chatNotification)
         case "channel.chat.user_message_hold":
-            if let event = try? decoder.decode(EventSubChatUserMessageModeration.self, from: data) {
-                return .chatUserMessageHold(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChatUserMessageModeration.self, map: Self.chatUserMessageHold)
         case "channel.chat.user_message_update":
-            if let event = try? decoder.decode(EventSubChatUserMessageModeration.self, from: data) {
-                return .chatUserMessageUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChatUserMessageModeration.self, map: Self.chatUserMessageUpdate)
         case "channel.chat_settings.update":
-            if let event = try? decoder.decode(EventSubChatSettingsUpdate.self, from: data) {
-                return .chatSettingsUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubChatSettingsUpdate.self, map: Self.chatSettingsUpdate)
         case "channel.shared_chat.begin":
-            if let event = try? decoder.decode(EventSubSharedChatSession.self, from: data) {
-                return .sharedChatBegin(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubSharedChatSession.self, map: Self.sharedChatBegin)
         case "channel.shared_chat.update":
-            if let event = try? decoder.decode(EventSubSharedChatSession.self, from: data) {
-                return .sharedChatUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubSharedChatSession.self, map: Self.sharedChatUpdate)
         case "channel.shared_chat.end":
-            if let event = try? decoder.decode(EventSubSharedChatSession.self, from: data) {
-                return .sharedChatEnd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubSharedChatSession.self, map: Self.sharedChatEnd)
         case "channel.moderate":
-            if let event = try? decoder.decode(EventSubModerate.self, from: data) {
-                return .moderate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubModerate.self, map: Self.moderate)
         case "channel.guest_star_session.begin":
-            if let event = try? decoder.decode(EventSubGuestStarSession.self, from: data) {
-                return .guestStarSessionBegin(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubGuestStarSession.self, map: Self.guestStarSessionBegin)
         case "channel.guest_star_session.end":
-            if let event = try? decoder.decode(EventSubGuestStarSession.self, from: data) {
-                return .guestStarSessionEnd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubGuestStarSession.self, map: Self.guestStarSessionEnd)
         case "channel.guest_star_guest.update":
-            if let event = try? decoder.decode(EventSubGuestStarGuestUpdate.self, from: data) {
-                return .guestStarGuestUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubGuestStarGuestUpdate.self, map: Self.guestStarGuestUpdate)
         case "channel.guest_star_settings.update":
-            if let event = try? decoder.decode(EventSubGuestStarSettingsUpdate.self, from: data) {
-                return .guestStarSettingsUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubGuestStarSettingsUpdate.self, map: Self.guestStarSettingsUpdate)
         case "channel.subscription.end":
-            if let event = try? decoder.decode(EventSubSubscriptionEnd.self, from: data) {
-                return .subscriptionEnd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubSubscriptionEnd.self, map: Self.subscriptionEnd)
         case "channel.subscription.gift":
-            if let event = try? decoder.decode(EventSubSubscriptionGift.self, from: data) {
-                return .subscriptionGift(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubSubscriptionGift.self, map: Self.subscriptionGift)
         case "channel.subscription.message":
-            if let event = try? decoder.decode(EventSubSubscriptionMessage.self, from: data) {
-                return .subscriptionMessage(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubSubscriptionMessage.self, map: Self.subscriptionMessage)
         case "channel.poll.begin":
-            if let event = try? decoder.decode(EventSubPoll.self, from: data) {
-                return .pollBegin(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubPoll.self, map: Self.pollBegin)
         case "channel.poll.progress":
-            if let event = try? decoder.decode(EventSubPoll.self, from: data) {
-                return .pollProgress(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubPoll.self, map: Self.pollProgress)
         case "channel.poll.end":
-            if let event = try? decoder.decode(EventSubPoll.self, from: data) {
-                return .pollEnd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubPoll.self, map: Self.pollEnd)
         case "channel.prediction.begin":
-            if let event = try? decoder.decode(EventSubPrediction.self, from: data) {
-                return .predictionBegin(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubPrediction.self, map: Self.predictionBegin)
         case "channel.prediction.progress":
-            if let event = try? decoder.decode(EventSubPrediction.self, from: data) {
-                return .predictionProgress(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubPrediction.self, map: Self.predictionProgress)
         case "channel.prediction.lock":
-            if let event = try? decoder.decode(EventSubPrediction.self, from: data) {
-                return .predictionLock(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubPrediction.self, map: Self.predictionLock)
         case "channel.prediction.end":
-            if let event = try? decoder.decode(EventSubPrediction.self, from: data) {
-                return .predictionEnd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubPrediction.self, map: Self.predictionEnd)
         case "channel.goal.begin":
-            if let event = try? decoder.decode(EventSubGoal.self, from: data) {
-                return .goalBegin(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubGoal.self, map: Self.goalBegin)
         case "channel.goal.progress":
-            if let event = try? decoder.decode(EventSubGoal.self, from: data) {
-                return .goalProgress(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubGoal.self, map: Self.goalProgress)
         case "channel.goal.end":
-            if let event = try? decoder.decode(EventSubGoal.self, from: data) {
-                return .goalEnd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubGoal.self, map: Self.goalEnd)
         case "channel.hype_train.begin":
-            if let event = try? decoder.decode(EventSubHypeTrain.self, from: data) {
-                return .hypeTrainBegin(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubHypeTrain.self, map: Self.hypeTrainBegin)
         case "channel.hype_train.progress":
-            if let event = try? decoder.decode(EventSubHypeTrain.self, from: data) {
-                return .hypeTrainProgress(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubHypeTrain.self, map: Self.hypeTrainProgress)
         case "channel.hype_train.end":
-            if let event = try? decoder.decode(EventSubHypeTrain.self, from: data) {
-                return .hypeTrainEnd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubHypeTrain.self, map: Self.hypeTrainEnd)
         case "channel.charity_campaign.donate":
-            if let event = try? decoder.decode(EventSubCharityDonation.self, from: data) {
-                return .charityCampaignDonate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubCharityDonation.self, map: Self.charityCampaignDonate)
         case "channel.charity_campaign.start":
-            if let event = try? decoder.decode(EventSubCharityCampaign.self, from: data) {
-                return .charityCampaignStart(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubCharityCampaign.self, map: Self.charityCampaignStart)
         case "channel.charity_campaign.progress":
-            if let event = try? decoder.decode(EventSubCharityCampaign.self, from: data) {
-                return .charityCampaignProgress(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubCharityCampaign.self, map: Self.charityCampaignProgress)
         case "channel.charity_campaign.stop":
-            if let event = try? decoder.decode(EventSubCharityCampaign.self, from: data) {
-                return .charityCampaignStop(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubCharityCampaign.self, map: Self.charityCampaignStop)
         case "channel.custom_power_up_redemption.add":
-            if let event = try? decoder.decode(EventSubCustomPowerUpRedemption.self, from: data) {
-                return .customPowerUpRedemptionAdd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubCustomPowerUpRedemption.self, map: Self.customPowerUpRedemptionAdd)
         case "channel.suspicious_user.message":
-            if let event = try? decoder.decode(EventSubSuspiciousUserMessage.self, from: data) {
-                return .suspiciousUserMessage(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubSuspiciousUserMessage.self, map: Self.suspiciousUserMessage)
         case "channel.suspicious_user.update":
-            if let event = try? decoder.decode(EventSubSuspiciousUserUpdate.self, from: data) {
-                return .suspiciousUserUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubSuspiciousUserUpdate.self, map: Self.suspiciousUserUpdate)
         case "channel.unban_request.create":
-            if let event = try? decoder.decode(EventSubUnbanRequest.self, from: data) {
-                return .unbanRequestCreate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubUnbanRequest.self, map: Self.unbanRequestCreate)
         case "channel.unban_request.resolve":
-            if let event = try? decoder.decode(EventSubUnbanRequest.self, from: data) {
-                return .unbanRequestResolve(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubUnbanRequest.self, map: Self.unbanRequestResolve)
         case "channel.vip.add":
-            if let event = try? decoder.decode(EventSubVIPChange.self, from: data) {
-                return .vipAdd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubVIPChange.self, map: Self.vipAdd)
         case "channel.vip.remove":
-            if let event = try? decoder.decode(EventSubVIPChange.self, from: data) {
-                return .vipRemove(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubVIPChange.self, map: Self.vipRemove)
         case "channel.shield_mode.begin":
-            if let event = try? decoder.decode(EventSubShieldMode.self, from: data) {
-                return .shieldModeBegin(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubShieldMode.self, map: Self.shieldModeBegin)
         case "channel.shield_mode.end":
-            if let event = try? decoder.decode(EventSubShieldMode.self, from: data) {
-                return .shieldModeEnd(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubShieldMode.self, map: Self.shieldModeEnd)
         case "channel.shoutout.create":
-            if let event = try? decoder.decode(EventSubShoutout.self, from: data) {
-                return .shoutoutCreate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubShoutout.self, map: Self.shoutoutCreate)
         case "channel.shoutout.receive":
-            if let event = try? decoder.decode(EventSubShoutout.self, from: data) {
-                return .shoutoutReceive(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubShoutout.self, map: Self.shoutoutReceive)
         case "channel.warning.acknowledge":
-            if let event = try? decoder.decode(EventSubWarning.self, from: data) {
-                return .warningAcknowledge(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubWarning.self, map: Self.warningAcknowledge)
         case "channel.warning.send":
-            if let event = try? decoder.decode(EventSubWarning.self, from: data) {
-                return .warningSend(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubWarning.self, map: Self.warningSend)
         case "conduit.shard.disabled":
-            if let event = try? decoder.decode(EventSubConduitShardDisabled.self, from: data) {
-                return .conduitShardDisabled(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubConduitShardDisabled.self, map: Self.conduitShardDisabled)
         case "drop.entitlement.grant":
-            if let event = try? decoder.decode(EventSubDropEntitlementGrant.self, from: data) {
-                return .dropEntitlementGrant(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubDropEntitlementGrant.self, map: Self.dropEntitlementGrant)
         case "extension.bits_transaction.create":
-            if let event = try? decoder.decode(EventSubExtensionBitsTransaction.self, from: data) {
-                return .extensionBitsTransactionCreate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubExtensionBitsTransaction.self, map: Self.extensionBitsTransactionCreate)
         case "user.authorization.grant":
-            if let event = try? decoder.decode(EventSubUserAuthorization.self, from: data) {
-                return .userAuthorizationGrant(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubUserAuthorization.self, map: Self.userAuthorizationGrant)
         case "user.authorization.revoke":
-            if let event = try? decoder.decode(EventSubUserAuthorization.self, from: data) {
-                return .userAuthorizationRevoke(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubUserAuthorization.self, map: Self.userAuthorizationRevoke)
         case "user.update":
-            if let event = try? decoder.decode(EventSubUserUpdate.self, from: data) {
-                return .userUpdate(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubUserUpdate.self, map: Self.userUpdate)
         case "user.whisper.message":
-            if let event = try? decoder.decode(EventSubWhisperMessage.self, from: data) {
-                return .userWhisperMessage(event)
-            }
+            return decodeKnownEvent(type: type, payload: data, decoder: decoder, as: EventSubWhisperMessage.self, map: Self.userWhisperMessage)
         default:
             break
         }
+        return fallbackEvent(type: type, payload: data)
+    }
+
+    private static func decodeKnownEvent<T: Decodable>(
+        type: String,
+        payload data: Data,
+        decoder: JSONDecoder,
+        as _: T.Type,
+        map: (T) -> Self
+    ) -> Self {
+        do {
+            return map(try decoder.decode(T.self, from: data))
+        } catch {
+            eventSubMessageLogger.error(
+                "EventSub: failed to decode \(type, privacy: .public) as \(String(describing: T.self), privacy: .public): \(eventSubDecodingErrorDescription(error), privacy: .public)"
+            )
+            return fallbackEvent(type: type, payload: data)
+        }
+    }
+
+    private static func fallbackEvent(type: String, payload data: Data) -> Self {
         if let knownType = EventSubKnownEventType(rawValue: type) {
             return .known(EventSubKnownEvent(type: knownType, payload: data))
         }
