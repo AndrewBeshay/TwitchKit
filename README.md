@@ -1,10 +1,8 @@
 # TwitchKit
 
 [![CI](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml/badge.svg)](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml)
-[![Swift Package Index](https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/AndrewBeshay/TwitchKit/badge?type=swift-versions)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
-[![SPI Platforms](https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/AndrewBeshay/TwitchKit/badge?type=platforms)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
-![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)
-![Platforms](https://img.shields.io/badge/platforms-iOS%2016%20%7C%20macOS%2013-lightgrey.svg)
+[![Swift Package Index](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FAndrewBeshay%2FTwitchKit%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
+[![SPI Platforms](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FAndrewBeshay%2FTwitchKit%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/tag/AndrewBeshay/TwitchKit?include_prereleases&label=release)](https://github.com/AndrewBeshay/TwitchKit/releases)
 
