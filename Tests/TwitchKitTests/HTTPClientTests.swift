@@ -1096,6 +1096,31 @@ final class HTTPClientTests: XCTestCase {
         }
     }
 
+    func test_deleteAllEventSubSubscriptionsDeletesMatchingPagedResults() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[{"id":"subscription-1","status":"enabled","type":"stream.online","version":"1","condition":{"broadcaster_user_id":"1234"},"transport":{"method":"websocket","session_id":"session-id"},"created_at":"2024-01-01T00:00:00Z","cost":1}],"pagination":{"cursor":"next"}}"#),
+            .json(statusCode: 204, body: ""),
+            .json(statusCode: 200, body: #"{"data":[],"pagination":{}}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let deletedCount = try await api.deleteAllEventSubSubscriptions(filter: .status(.enabled))
+
+        XCTAssertEqual(deletedCount, 1)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "DELETE", "GET"])
+        XCTAssertEqual(
+            requests.map { $0.url?.absoluteString },
+            [
+                "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled",
+                "https://api.twitch.tv/helix/eventsub/subscriptions?id=subscription-1",
+                "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled&after=next"
+            ]
+        )
+    }
+
     func test_fetchChannelsInfoUsesRepeatedBroadcasterIDs() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 200, body: """

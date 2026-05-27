@@ -67,6 +67,31 @@ extension HelixClient {
         )
     }
 
+    /// Deletes every EventSub subscription matching the provided filter.
+    ///
+    /// Use this when a tool or test run needs to clean up stale subscriptions created by the
+    /// authenticated client. Twitch allows only one EventSub list filter at a time.
+    ///
+    /// - Parameter filter: Optional mutually exclusive filter. Pass `nil` to delete all subscriptions.
+    /// - Returns: The number of subscriptions deleted.
+    /// - SeeAlso: [Manage EventSub Subscriptions](https://dev.twitch.tv/docs/eventsub/manage-subscriptions/)
+    @discardableResult
+    public func deleteAllEventSubSubscriptions(filter: EventSubSubscriptionFilter? = nil) async throws -> Int {
+        var deletedCount = 0
+        var cursor: String?
+
+        repeat {
+            let page = try await fetchEventSubSubscriptionsPage(filter: filter, after: cursor)
+            for subscription in page.data {
+                try await deleteEventSubSubscription(id: subscription.id)
+                deletedCount += 1
+            }
+            cursor = page.nextCursor
+        } while cursor != nil
+
+        return deletedCount
+    }
+
     /// Creates an EventSub subscription for the given event type.
     ///
     /// - Parameters:
