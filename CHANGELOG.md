@@ -4,6 +4,14 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [0.2.3] - 2026-05-28
+
+### Changed
+
+- Reused TwitchKit's locked ISO-8601 date formatter cache for analytics, schedule, and media query dates to avoid creating duplicate formatter helpers.
+- Switched OAuth device-code polling expiration to `ContinuousClock` so polling is not affected by wall-clock changes.
+- Simplified Twitch emote image URL template replacement.
+
 ## [0.2.2] - 2026-05-28
 
 ### Added

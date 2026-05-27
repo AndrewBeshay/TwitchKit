@@ -23,7 +23,7 @@ The package is currently pre-1.0. It provides typed authentication, token storag
 Add TwitchKit as a Swift Package dependency:
 
 ```swift
-.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.2")
+.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.3")
 ```
 
 Then add the product to your target:
