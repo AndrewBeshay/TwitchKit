@@ -875,18 +875,21 @@ final class HTTPClientTests: XCTestCase {
 
     func test_eventSubSubscriptionAcceptsAcceptedResponse() async throws {
         let transport = MockHTTPClient(responses: [
-            .json(statusCode: 202, body: #"{"data":[]}"#)
+            .json(statusCode: 202, body: #"{"data":[{"id":"subscription-1","status":"enabled","type":"channel.chat.message","version":"1","condition":{"broadcaster_user_id":"broadcaster-id","user_id":"user-id"},"transport":{"method":"websocket","session_id":"session-id"},"created_at":"2024-01-01T00:00:00Z","cost":0}]}"#)
         ])
         let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
         let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
 
-        try await api.createEventSubSubscription(
+        let subscription = try await api.createEventSubSubscription(
             type: "channel.chat.message",
             version: "1",
             condition: ["broadcaster_user_id": "broadcaster-id", "user_id": "user-id"],
             sessionId: "session-id"
         )
+
+        XCTAssertEqual(subscription.id, "subscription-1")
+        XCTAssertEqual(subscription.transport.method, .websocket)
 
         let requests = await transport.recordedRequests()
         let request = try XCTUnwrap(requests.first)
@@ -901,7 +904,7 @@ final class HTTPClientTests: XCTestCase {
 
     func test_eventSubSubscriptionSupportsWebhookTransport() async throws {
         let transport = MockHTTPClient(responses: [
-            .json(statusCode: 202, body: #"{"data":[]}"#)
+            .json(statusCode: 202, body: #"{"data":[{"id":"subscription-1","status":"enabled","type":"drop.entitlement.grant","version":"1","condition":{"organization_id":"organization"},"transport":{"method":"webhook","callback":"https://example.com/eventsub"},"created_at":"2024-01-01T00:00:00Z","cost":0}]}"#)
         ])
         let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))
@@ -926,7 +929,7 @@ final class HTTPClientTests: XCTestCase {
 
     func test_eventSubSubscriptionSupportsBatchingFlag() async throws {
         let transport = MockHTTPClient(responses: [
-            .json(statusCode: 202, body: #"{"data":[]}"#)
+            .json(statusCode: 202, body: #"{"data":[{"id":"subscription-1","status":"enabled","type":"drop.entitlement.grant","version":"1","condition":{"organization_id":"organization"},"transport":{"method":"webhook","callback":"https://example.com/eventsub"},"created_at":"2024-01-01T00:00:00Z","cost":0}]}"#)
         ])
         let auth = makeAuth()
         try await auth.setToken(OAuthToken(accessToken: "access-token"))

@@ -77,13 +77,14 @@ extension HelixClient {
     ///   - isBatchingEnabled: Whether Twitch should batch compatible EventSub notifications.
     /// - Throws: `HelixError.badRequest` if the subscription fails.
     /// - SeeAlso: [Create EventSub Subscription](https://dev.twitch.tv/docs/api/reference/#create-eventsub-subscription)
+    @discardableResult
     public func createEventSubSubscription(
         type: String,
         version: String,
         condition: [String: String],
         transport: EventSubSubscriptionTransport,
         isBatchingEnabled: Bool? = nil
-    ) async throws {
+    ) async throws -> EventSubSubscriptionRecord {
         try transport.validate()
         let payload = EventSubSubscriptionRequest(
             type: type,
@@ -94,12 +95,13 @@ extension HelixClient {
         )
         let bodyData = try JSONEncoder.twitch().encode(payload)
 
-        try await requestAccepted(
+        let response: HelixResponse<EventSubSubscriptionRecord> = try await request(
             endpoint: "eventsub/subscriptions",
             method: "POST",
-            body: bodyData,
-            fallbackMessage: "EventSub subscription failed"
+            body: bodyData
         )
+        guard let subscription = response.data.first else { throw HelixError.notFound }
+        return subscription
     }
 
     /// Creates a WebSocket EventSub subscription for the given event type.
@@ -117,20 +119,21 @@ extension HelixClient {
     ///   - isBatchingEnabled: Whether Twitch should batch compatible EventSub notifications.
     /// - Throws: `HelixError.badRequest` if the subscription fails.
     /// - SeeAlso: [Create EventSub Subscription](https://dev.twitch.tv/docs/api/reference/#create-eventsub-subscription)
+    @discardableResult
     public func createEventSubSubscription(
         type: String,
         version: String,
         condition: [String: String],
         sessionId: String,
         isBatchingEnabled: Bool? = nil
-    ) async throws {
+    ) async throws -> EventSubSubscriptionRecord {
         guard !sessionId.isEmpty else {
             throw HelixError.badRequest(
                 TwitchAPIError.fallback(status: 400, message: "EventSub WebSocket session ID is required")
             )
         }
 
-        try await createEventSubSubscription(
+        return try await createEventSubSubscription(
             type: type,
             version: version,
             condition: condition,
