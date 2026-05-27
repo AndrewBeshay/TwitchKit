@@ -143,5 +143,5 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 ### Notes
 
 - This is an alpha prerelease. Public APIs may change before `1.0.0`.
-- The package currently targets Swift 6.2, iOS 16, and macOS 13.
+- The package currently targets Swift 6.0 tools, Swift 6 language mode, iOS 16, and macOS 13.
 - TwitchKit currently covers a focused subset of Helix and EventSub. More endpoints and typed EventSub subscriptions are planned.

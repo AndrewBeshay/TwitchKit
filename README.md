@@ -3,7 +3,7 @@
 [![CI](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml/badge.svg)](https://github.com/AndrewBeshay/TwitchKit/actions/workflows/ci.yml)
 [![Swift Package Index](https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/AndrewBeshay/TwitchKit/badge?type=swift-versions)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
 [![SPI Platforms](https://img.shields.io/endpoint?url=https://swiftpackageindex.com/api/packages/AndrewBeshay/TwitchKit/badge?type=platforms)](https://swiftpackageindex.com/AndrewBeshay/TwitchKit)
-![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
+![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)
 ![Platforms](https://img.shields.io/badge/platforms-iOS%2016%20%7C%20macOS%2013-lightgrey.svg)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/tag/AndrewBeshay/TwitchKit?include_prereleases&label=release)](https://github.com/AndrewBeshay/TwitchKit/releases)
