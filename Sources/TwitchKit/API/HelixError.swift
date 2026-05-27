@@ -380,6 +380,7 @@ enum TwitchDateParser {
 }
 
 private final class TwitchISO8601DateFormatterCache: @unchecked Sendable {
+    // ISO8601DateFormatter is mutable and not Sendable; the lock serializes all access.
     private let lock = NSLock()
     private let fractionalFormatter: ISO8601DateFormatter
     private let standardFormatter: ISO8601DateFormatter

@@ -203,11 +203,12 @@ public struct TwitchOAuthClient: Sendable {
         expiresIn: Int = 600
     ) async throws -> OAuthToken {
         var pollingInterval = max(1, interval)
-        let deadline = Date().addingTimeInterval(TimeInterval(max(1, expiresIn)))
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(max(1, expiresIn)))
 
         while true {
             try Task.checkCancellation()
-            if Date() >= deadline {
+            if clock.now >= deadline {
                 throw HelixError.oauth(TwitchOAuthError(error: "expired_token", message: "Device code expired"))
             }
 

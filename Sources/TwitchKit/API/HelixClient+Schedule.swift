@@ -22,7 +22,7 @@ extension HelixClient {
     ) async throws -> ChannelStreamSchedulePage {
         var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterId)]
         queryItems += HelixQuery.items("id", values: segmentIDs)
-        HelixQuery.append(startTime.map { URLQueryItem(name: "start_time", value: Self.iso8601String(from: $0)) }, to: &queryItems)
+        HelixQuery.append(startTime.map { URLQueryItem(name: "start_time", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
         HelixQuery.append(HelixQuery.item("utc_offset", utcOffset), to: &queryItems)
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
 
@@ -136,11 +136,6 @@ extension HelixClient {
         )
     }
 
-    private static func iso8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
-    }
 }
 
 public struct ChannelStreamSchedulePage: Sendable, Equatable {

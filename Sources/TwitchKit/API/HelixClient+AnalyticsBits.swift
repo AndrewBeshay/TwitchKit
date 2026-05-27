@@ -13,8 +13,8 @@ extension HelixClient {
         var queryItems: [URLQueryItem] = []
         HelixQuery.append(HelixQuery.item("extension_id", extensionID), to: &queryItems)
         HelixQuery.append(HelixQuery.item("type", type?.rawValue), to: &queryItems)
-        HelixQuery.append(startedAt.map { URLQueryItem(name: "started_at", value: Self.analyticsISO8601String(from: $0)) }, to: &queryItems)
-        HelixQuery.append(endedAt.map { URLQueryItem(name: "ended_at", value: Self.analyticsISO8601String(from: $0)) }, to: &queryItems)
+        HelixQuery.append(startedAt.map { URLQueryItem(name: "started_at", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
+        HelixQuery.append(endedAt.map { URLQueryItem(name: "ended_at", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
 
         let response: HelixResponse<AnalyticsReport> = try await request(
@@ -36,8 +36,8 @@ extension HelixClient {
         var queryItems: [URLQueryItem] = []
         HelixQuery.append(HelixQuery.item("game_id", gameID), to: &queryItems)
         HelixQuery.append(HelixQuery.item("type", type?.rawValue), to: &queryItems)
-        HelixQuery.append(startedAt.map { URLQueryItem(name: "started_at", value: Self.analyticsISO8601String(from: $0)) }, to: &queryItems)
-        HelixQuery.append(endedAt.map { URLQueryItem(name: "ended_at", value: Self.analyticsISO8601String(from: $0)) }, to: &queryItems)
+        HelixQuery.append(startedAt.map { URLQueryItem(name: "started_at", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
+        HelixQuery.append(endedAt.map { URLQueryItem(name: "ended_at", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
 
         let response: HelixResponse<AnalyticsReport> = try await request(
@@ -57,7 +57,7 @@ extension HelixClient {
         var queryItems: [URLQueryItem] = []
         HelixQuery.append(HelixQuery.item("count", count.map(String.init)), to: &queryItems)
         HelixQuery.append(HelixQuery.item("period", period?.rawValue), to: &queryItems)
-        HelixQuery.append(startedAt.map { URLQueryItem(name: "started_at", value: Self.analyticsISO8601String(from: $0)) }, to: &queryItems)
+        HelixQuery.append(startedAt.map { URLQueryItem(name: "started_at", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
         HelixQuery.append(HelixQuery.item("user_id", userID), to: &queryItems)
 
         let data = try await requestRawData(
@@ -101,11 +101,6 @@ extension HelixClient {
         return response.page
     }
 
-    private static func analyticsISO8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
-    }
 }
 
 public enum AnalyticsReportType: String, Sendable, Equatable {

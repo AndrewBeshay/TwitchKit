@@ -54,8 +54,8 @@ extension HelixClient {
         HelixQuery.append(HelixQuery.item("broadcaster_id", broadcasterID), to: &queryItems)
         HelixQuery.append(HelixQuery.item("game_id", gameID), to: &queryItems)
         queryItems += HelixQuery.items("id", values: ids)
-        HelixQuery.append(startedAt.map { URLQueryItem(name: "started_at", value: Self.mediaISO8601String(from: $0)) }, to: &queryItems)
-        HelixQuery.append(endedAt.map { URLQueryItem(name: "ended_at", value: Self.mediaISO8601String(from: $0)) }, to: &queryItems)
+        HelixQuery.append(startedAt.map { URLQueryItem(name: "started_at", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
+        HelixQuery.append(endedAt.map { URLQueryItem(name: "ended_at", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor, before: previousCursor)
 
         let response: HelixResponse<TwitchClip> = try await request(endpoint: "clips", queryItems: queryItems)
@@ -110,11 +110,6 @@ extension HelixClient {
         return response.data.map(\.id)
     }
 
-    private static func mediaISO8601String(from date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
-    }
 }
 
 public struct ClipCreate: Decodable, Sendable, Equatable {

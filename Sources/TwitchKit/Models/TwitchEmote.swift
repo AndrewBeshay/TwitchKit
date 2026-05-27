@@ -71,10 +71,10 @@ public struct TwitchEmote: Codable, Sendable, Equatable, Identifiable {
     public func imageURL(format: String = "static", theme: String = "dark", scale: String = "3.0") -> URL? {
         let base = template ?? "https://static-cdn.jtvnw.net/emoticons/v2/{{id}}/{{format}}/{{theme_mode}}/{{scale}}"
         let urlString = base
-            .replacingOccurrences(of: "{{id}}", with: id)
-            .replacingOccurrences(of: "{{format}}", with: format)
-            .replacingOccurrences(of: "{{theme_mode}}", with: theme)
-            .replacingOccurrences(of: "{{scale}}", with: scale)
+            .replacing("{{id}}", with: id)
+            .replacing("{{format}}", with: format)
+            .replacing("{{theme_mode}}", with: theme)
+            .replacing("{{scale}}", with: scale)
         return URL(string: urlString)
     }
 }
