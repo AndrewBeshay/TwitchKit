@@ -29,6 +29,7 @@ public final class TwitchClient: Sendable {
     ///   - responseMetadataHandler: Optional callback invoked with metadata from successful Helix responses.
     ///   - eventBufferingPolicy: Buffering policy for EventSub notifications when consumers are slower than Twitch delivery.
     ///   - isLive: Returns whether the channel is live, used to tune EventSub reconnect behavior.
+    ///   - pathMonitor: Network-path monitor driving EventSub's path-aware reconnect. Defaults to a `NWPathMonitor`-backed monitor.
     public init(
         clientId: String,
         clientSecret: String? = nil,
@@ -39,7 +40,8 @@ public final class TwitchClient: Sendable {
         retryPolicy: HelixRetryPolicy = .default,
         responseMetadataHandler: (@Sendable (HelixResponseMetadata) -> Void)? = nil,
         eventBufferingPolicy: AsyncStream<EventSubEvent>.Continuation.BufferingPolicy = .bufferingNewest(1_000),
-        isLive: @escaping @Sendable () async -> Bool = { false }
+        isLive: @escaping @Sendable () async -> Bool = { false },
+        pathMonitor: NetworkPathMonitoring = NWPathNetworkMonitor()
     ) {
         self.clientId = clientId
         let oauthClient = TwitchOAuthClient(clientId: clientId, clientSecret: clientSecret, httpClient: httpClient)
@@ -66,6 +68,7 @@ public final class TwitchClient: Sendable {
         self.eventSub = EventSubClient(
             api: api,
             isLive: isLive,
+            pathMonitor: pathMonitor,
             eventBufferingPolicy: eventBufferingPolicy
         )
     }

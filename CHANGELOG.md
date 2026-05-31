@@ -4,6 +4,17 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [0.3.0] - 2026-06-01
+
+### Added
+
+- EventSub: network-path-aware reconnect plus a public `connectionState` stream (`ConnectionState`) consumers can observe to drive UI such as a "Reconnecting…" indicator.
+- Added the `NetworkPathMonitoring` protocol, `NetworkPathStatus` enum, and `NWPathMonitor`-backed `NWPathNetworkMonitor`. `EventSubClient` and `TwitchClient` gained a defaulted `pathMonitor` parameter; all new API is additive and existing call sites compile unchanged.
+
+### Changed
+
+- EventSub now pauses its reconnect loop while the network path is unsatisfied and reconnects immediately (resetting backoff) the instant the path is satisfied again, instead of burning retry attempts into a dead network. The `isLive` backoff ladder still governs non-network socket drops.
+
 ## [0.2.3] - 2026-05-28
 
 ### Changed

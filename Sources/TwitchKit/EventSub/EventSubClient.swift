@@ -8,8 +8,22 @@ public actor EventSubClient {
     public nonisolated let events: AsyncStream<EventSubEvent>
     private let eventsContinuation: AsyncStream<EventSubEvent>.Continuation
 
+    /// Stream of connection-state transitions, suitable for driving UI such as a
+    /// "Reconnecting…" indicator.
+    ///
+    /// Single-consumer (like ``events``): exactly one iterator consumes this stream,
+    /// and there is no value replay for late subscribers. Begin iterating
+    /// *before/around* ``connect()`` so you observe the initial
+    /// `.connecting`/`.connected` transitions.
+    public nonisolated let connectionState: AsyncStream<ConnectionState>
+    private let connectionStateContinuation: AsyncStream<ConnectionState>.Continuation
+    private var lastEmittedState: ConnectionState?
+
     private let api: HelixClient
     private let isLive: @Sendable () async -> Bool
+    private let pathMonitor: NetworkPathMonitoring
+    private var pathMonitorTask: Task<Void, Never>?
+    private var isNetworkAvailable = true   // optimistic until told otherwise
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var sessionId: String?
@@ -33,18 +47,23 @@ public actor EventSubClient {
     public init(
         api: HelixClient,
         isLive: @escaping @Sendable () async -> Bool,
+        pathMonitor: NetworkPathMonitoring = NWPathNetworkMonitor(),
         eventBufferingPolicy: AsyncStream<EventSubEvent>.Continuation.BufferingPolicy = .bufferingNewest(1_000)
     ) {
         self.api = api
         self.isLive = isLive
+        self.pathMonitor = pathMonitor
         (events, eventsContinuation) = AsyncStream.makeStream(
             of: EventSubEvent.self,
             bufferingPolicy: eventBufferingPolicy
         )
+        (connectionState, connectionStateContinuation) = AsyncStream.makeStream(of: ConnectionState.self)
     }
 
     deinit {
         reconnectTask?.cancel()
+        pathMonitorTask?.cancel()
+        pathMonitor.cancel()
         for task in receiveTasks.values {
             task.cancel()
         }
@@ -52,6 +71,7 @@ public actor EventSubClient {
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         welcomeContinuation?.resume(throwing: HelixError.networkError("EventSub client deallocated"))
         eventsContinuation.finish()
+        connectionStateContinuation.finish()
     }
 
     // MARK: - Public
@@ -67,10 +87,62 @@ public actor EventSubClient {
             throw HelixError.networkError("EventSub connection already in progress")
         }
 
-        shouldReconnect = true
+        startConnectionLifecycle()
         isConnecting = true
         defer { isConnecting = false }
         try await openConnection(to: Self.websocketURL, resetReconnectAttempts: true, timeout: timeout)
+    }
+
+    /// Marks the client as intending to be connected and begins path monitoring,
+    /// emitting `.connecting`. `connect()` calls this before opening the socket;
+    /// it is the seam that ties network monitoring to an intended-connected lifecycle.
+    func startConnectionLifecycle() {
+        shouldReconnect = true
+        emit(.connecting)
+        startPathMonitorIfNeeded()
+    }
+
+    // MARK: - Connection State
+
+    /// Emits a connection state, deduping so rapid flaps don't spam identical states.
+    private func emit(_ state: ConnectionState) {
+        guard state != lastEmittedState else { return }
+        lastEmittedState = state
+        connectionStateContinuation.yield(state)
+    }
+
+    // MARK: - Network Path Monitoring
+
+    private func startPathMonitorIfNeeded() {
+        guard pathMonitorTask == nil else { return }
+        pathMonitor.start()
+        pathMonitorTask = Task { [weak self] in
+            guard let self else { return }
+            for await status in self.pathMonitor.pathUpdates {
+                await self.handlePathStatus(status)
+            }
+        }
+    }
+
+    private func handlePathStatus(_ status: NetworkPathStatus) {
+        switch status {
+        case .unsatisfied:
+            isNetworkAvailable = false
+            // Stop hammering a dead network: cancel the in-flight backoff sleep.
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            if sessionId == nil { emit(.waitingForNetwork) }
+        case .satisfied:
+            let wasOffline = !isNetworkAvailable
+            isNetworkAvailable = true
+            // Reconnect immediately if we *want* to be connected but aren't.
+            if wasOffline, shouldReconnect, sessionId == nil {
+                reconnectAttempts = 0           // reset backoff — restore is "attempt 1"
+                reconnectTask?.cancel()
+                emit(.reconnecting)
+                reconnectTask = Task { await attemptReconnect() }
+            }
+        }
     }
 
     private func openConnection(
@@ -111,6 +183,10 @@ public actor EventSubClient {
         shouldReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
+        pathMonitorTask?.cancel()
+        pathMonitorTask = nil
+        pathMonitor.cancel()
+        emit(.disconnected)
         cancelReceiveTasks()
         keepaliveTask?.cancel()
         keepaliveTask = nil
@@ -240,6 +316,7 @@ public actor EventSubClient {
             keepaliveTimeout = envelope.payload.session?.keepaliveTimeoutSeconds ?? 10
             logger.info("🟢 EventSub: session_welcome — id=\(self.sessionId ?? "nil"), keepalive=\(self.keepaliveTimeout)s")
             updateKeepaliveDeadline()
+            emit(.connected)
             // Resume connect() — caller was waiting for session ID
             welcomeContinuation?.resume()
             welcomeContinuation = nil
@@ -347,22 +424,30 @@ public actor EventSubClient {
         welcomeContinuation = nil
 
         guard shouldReconnect else { return }
-        reconnectTask?.cancel()
-        reconnectTask = Task { await attemptReconnect() }
+        if isNetworkAvailable {
+            emit(.reconnecting)
+            reconnectTask?.cancel()
+            reconnectTask = Task { await attemptReconnect() }
+        } else {
+            emit(.waitingForNetwork)   // parked; handlePathStatus(.satisfied) will resume
+        }
     }
 
     private func attemptReconnect() async {
         guard shouldReconnect else { return }
+        guard isNetworkAvailable else { emit(.waitingForNetwork); return }  // park
+
         let live = await isLive()
-        let maxAttempts = live ? Int.max : 5
-        let baseDelay: Double = live ? 0.5 : 1.0
-        let maxDelay: Double = live ? 5.0 : 30.0
-
         reconnectAttempts += 1
-        guard reconnectAttempts <= maxAttempts else { return }
+        let decision = reconnectDecision(
+            networkAvailable: isNetworkAvailable,
+            shouldReconnect: shouldReconnect,
+            isLive: live,
+            attempt: reconnectAttempts
+        )
+        guard case .attempt(let delay) = decision.action else { return }
 
-        let delay = min(baseDelay * pow(2.0, Double(reconnectAttempts - 1)), maxDelay)
-        try? await Task.sleep(for: .seconds(delay))
+        try? await Task.sleep(for: delay)
         guard shouldReconnect, !Task.isCancelled else { return }
 
         do {

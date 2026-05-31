@@ -21,7 +21,7 @@ The package is currently pre-1.0. It provides typed authentication, token storag
 Add TwitchKit as a Swift Package dependency:
 
 ```swift
-.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.2.3")
+.package(url: "https://github.com/AndrewBeshay/TwitchKit.git", from: "0.3.0")
 ```
 
 Then add the product to your target:
@@ -159,7 +159,29 @@ for await event in twitch.eventSub.events {
 }
 ```
 
-EventSub reconnects automatically and re-creates desired subscriptions after a full disconnect. Duplicate EventSub messages are ignored by message ID. TwitchKit bounds duplicate-message tracking and buffers the newest 1,000 EventSub notifications by default so a slow consumer cannot grow memory without limit.
+EventSub reconnects automatically and re-creates desired subscriptions after a full disconnect. Reconnect is network-path aware: while the OS reports no usable network path the retry loop parks instead of burning attempts into a dead connection, and it reconnects immediately — resetting backoff — the moment the path is restored. Duplicate EventSub messages are ignored by message ID. TwitchKit bounds duplicate-message tracking and buffers the newest 1,000 EventSub notifications by default so a slow consumer cannot grow memory without limit.
+
+### Observing connection state
+
+`eventSub.connectionState` is an `AsyncStream<ConnectionState>` you can observe to drive UI such as a "Reconnecting…" indicator. Like `events`, it is single-consumer with no value replay, so begin iterating before/around `connect()`:
+
+```swift
+Task {
+    for await state in twitch.eventSub.connectionState {
+        switch state {
+        case .connecting:        print("Connecting…")
+        case .connected:         print("Live")
+        case .reconnecting:      print("Reconnecting…")
+        case .waitingForNetwork: print("Waiting for network…")
+        case .disconnected:      print("Disconnected")
+        }
+    }
+}
+
+try await twitch.eventSub.connect()
+```
+
+The network monitor is injectable for testing via the defaulted `pathMonitor:` parameter on `TwitchClient`/`EventSubClient` (any `NetworkPathMonitoring`); it defaults to an `NWPathMonitor`-backed implementation.
 
 If your app needs a different EventSub buffering tradeoff, configure the client at initialization:
 
@@ -332,7 +354,7 @@ TwitchKit is pre-1.0 and the public API may change. Current coverage includes:
 
 - OAuth helper flows and Keychain-backed token storage
 - Broad Helix creator, chat, channel-management, moderation, media, and EventSub-management APIs
-- EventSub WebSocket connection management and subscription re-creation
+- EventSub WebSocket connection management, network-path-aware reconnect, an observable `connectionState` stream, and subscription re-creation
 - EventSub subscription factories for the current Twitch subscription type catalog
 - Typed models for Twitch's current EventSub subscription type catalog, with raw fallbacks for future Twitch types and decode-resilience
 - Swift 6 `Sendable` annotations and actor-isolated auth/EventSub clients
