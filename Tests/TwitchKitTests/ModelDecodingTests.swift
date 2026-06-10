@@ -492,4 +492,62 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(response.data.count, 1)
         XCTAssertNil(response.pagination)
     }
+
+    // MARK: - SearchChannel
+
+    /// GET /search/channels returns `"started_at": ""` — an empty string,
+    /// NOT null and NOT an absent key — for channels that aren't live.
+    /// (Documented: "The string is empty if the broadcaster is not
+    /// streaming live.") `Date?` alone doesn't survive that: the key is
+    /// present, so the decoder runs the date strategy on "" and throws,
+    /// failing the entire results page for any search that includes one
+    /// offline channel — i.e. almost every search.
+    func test_decodeSearchChannelOffline_emptyStartedAt() throws {
+        let json = """
+        {
+            "broadcaster_language": "en",
+            "broadcaster_login": "loserfruit",
+            "display_name": "Loserfruit",
+            "game_id": "498000",
+            "game_name": "House Flipper",
+            "id": "41245072",
+            "is_live": false,
+            "tag_ids": [],
+            "tags": ["English"],
+            "thumbnail_url": "https://static-cdn.jtvnw.net/jtv_user_pictures/profile.png",
+            "title": "loserfruit",
+            "started_at": ""
+        }
+        """.data(using: .utf8)!
+
+        let channel = try JSONDecoder.twitch().decode(SearchChannel.self, from: json)
+
+        XCTAssertEqual(channel.broadcasterLogin, "loserfruit")
+        XCTAssertFalse(channel.isLive)
+        XCTAssertNil(channel.startedAt)
+    }
+
+    func test_decodeSearchChannelLive_parsesStartedAt() throws {
+        let json = """
+        {
+            "broadcaster_language": "en",
+            "broadcaster_login": "a_seagull",
+            "display_name": "A_Seagull",
+            "game_id": "506442",
+            "game_name": "DOOM Eternal",
+            "id": "19070311",
+            "is_live": true,
+            "tag_ids": [],
+            "tags": ["English"],
+            "thumbnail_url": "https://static-cdn.jtvnw.net/jtv_user_pictures/profile.png",
+            "title": "I hate headaches",
+            "started_at": "2020-03-18T17:56:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let channel = try JSONDecoder.twitch().decode(SearchChannel.self, from: json)
+
+        XCTAssertTrue(channel.isLive)
+        XCTAssertNotNil(channel.startedAt)
+    }
 }

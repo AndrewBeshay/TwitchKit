@@ -102,4 +102,34 @@ public struct SearchChannel: Decodable, Sendable, Equatable {
     public let thumbnailUrl: String
     public let title: String
     public let startedAt: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case broadcasterLanguage, broadcasterLogin, displayName, gameId
+        case gameName, id, isLive, tagIds, tags, thumbnailUrl, title, startedAt
+    }
+
+    /// Custom decoding solely for `startedAt`: Twitch sends
+    /// `"started_at": ""` — an empty string, not null — when the channel
+    /// is offline ("The string is empty if the broadcaster is not
+    /// streaming live"). The key is present, so `Date?` + the date
+    /// strategy would try to parse "" and throw, failing the whole
+    /// search page whenever any result is offline. Decode the raw string
+    /// and map non-parsing values (incl. empty) to nil instead.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        broadcasterLanguage = try container.decode(String.self, forKey: .broadcasterLanguage)
+        broadcasterLogin = try container.decode(String.self, forKey: .broadcasterLogin)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        gameId = try container.decode(String.self, forKey: .gameId)
+        gameName = try container.decode(String.self, forKey: .gameName)
+        id = try container.decode(String.self, forKey: .id)
+        isLive = try container.decode(Bool.self, forKey: .isLive)
+        // tag_ids is deprecated upstream; tolerate it disappearing.
+        tagIds = try container.decodeIfPresent([String].self, forKey: .tagIds) ?? []
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        thumbnailUrl = try container.decode(String.self, forKey: .thumbnailUrl)
+        title = try container.decode(String.self, forKey: .title)
+        let rawStartedAt = try container.decodeIfPresent(String.self, forKey: .startedAt)
+        startedAt = rawStartedAt.flatMap(TwitchDateParser.date(from:))
+    }
 }
