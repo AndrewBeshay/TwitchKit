@@ -58,6 +58,42 @@ final class EventSubConnectionStateTests: XCTestCase {
         XCTAssertEqual(observed, [.connecting, .disconnected])
         XCTAssertTrue(mock.didCancel)
     }
+
+    /// One EventSubClient is shared by every consumer on an account (one
+    /// chat session per open channel) — so two consumers calling
+    /// `connect()` near-simultaneously is NORMAL operation (e.g. swiping
+    /// quickly between channel tabs at app start). The second caller must
+    /// coalesce onto the in-flight attempt and share its outcome, not
+    /// throw "EventSub connection already in progress".
+    func test_concurrentConnectCoalescesInsteadOfThrowing() async throws {
+        let client = EventSubClient(api: makeDummyAPI(), isLive: { false }, pathMonitor: MockNetworkPathMonitor())
+
+        // Gate the fake connection attempt so the first connect() stays
+        // in flight until the test releases it.
+        let (gate, gateContinuation) = AsyncStream.makeStream(of: Void.self)
+        await client.setConnectBodyForTesting {
+            var iterator = gate.makeAsyncIterator()
+            _ = await iterator.next()
+        }
+
+        let first = Task { try await client.connect() }
+        // Deterministic ordering: wait until the first attempt has
+        // actually entered its in-flight window before the second call.
+        while await !(client.isConnectingForTesting) {
+            await Task.yield()
+        }
+
+        let second = Task { try await client.connect() }
+        gateContinuation.yield(())
+        gateContinuation.finish()
+
+        try await first.value
+        // Pre-coalescing this threw networkError("EventSub connection
+        // already in progress").
+        try await second.value
+
+        await client.disconnect()
+    }
 }
 
 // MARK: - Test doubles

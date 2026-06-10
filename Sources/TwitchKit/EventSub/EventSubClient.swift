@@ -79,18 +79,57 @@ public actor EventSubClient {
     /// Continuation used to make connect() wait for session_welcome before returning.
     private var welcomeContinuation: CheckedContinuation<Void, Error>?
 
+    /// Test seam: replaces the socket-opening body of a connect() attempt
+    /// so the connect-coalescing logic can be exercised without a real
+    /// WebSocket (there is no socket seam in this client — see
+    /// EventSubConnectionStateTests). Always nil in production.
+    private var connectBodyForTesting: (@Sendable () async throws -> Void)?
+
+    /// Internal, for tests only — see `connectBodyForTesting`.
+    func setConnectBodyForTesting(_ body: @escaping @Sendable () async throws -> Void) {
+        connectBodyForTesting = body
+    }
+
+    /// Internal, for tests only — true while a connect() attempt is in flight.
+    var isConnectingForTesting: Bool { isConnecting }
+
+    /// The in-flight connect() attempt, if any. One shared client serves
+    /// every consumer on an account (e.g. one chat session per open
+    /// channel), so a second connect() landing while the first is
+    /// mid-handshake is normal operation — those callers await this task
+    /// and share its outcome instead of erroring.
+    private var inFlightConnect: Task<Void, Error>?
+
     public func connect(timeout: Duration = .seconds(15)) async throws {
         if sessionId != nil {
             return
         }
-        guard !isConnecting else {
-            throw HelixError.networkError("EventSub connection already in progress")
+        // Coalesce concurrent callers onto the in-flight attempt: they
+        // succeed together or fail with the same underlying error.
+        if let inFlightConnect {
+            try await inFlightConnect.value
+            return
         }
 
         startConnectionLifecycle()
         isConnecting = true
-        defer { isConnecting = false }
-        try await openConnection(to: Self.websocketURL, resetReconnectAttempts: true, timeout: timeout)
+        // Unstructured Task (inheriting this actor's isolation) so the
+        // attempt's lifetime is owned by the client, not the first
+        // caller — a cancelled initiator must not tear the handshake out
+        // from under the coalesced waiters.
+        let attempt = Task {
+            if let connectBodyForTesting {
+                try await connectBodyForTesting()
+            } else {
+                try await openConnection(to: Self.websocketURL, resetReconnectAttempts: true, timeout: timeout)
+            }
+        }
+        inFlightConnect = attempt
+        defer {
+            inFlightConnect = nil
+            isConnecting = false
+        }
+        try await attempt.value
     }
 
     /// Marks the client as intending to be connected and begins path monitoring,
