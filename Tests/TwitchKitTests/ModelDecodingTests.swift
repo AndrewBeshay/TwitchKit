@@ -439,6 +439,32 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(stream.language, "en")
     }
 
+    /// Twitch returns `"tags": null` for streams that have no tags set.
+    /// The non-optional `[String]` must tolerate this and decode to `[]`.
+    func test_decodeTwitchStream_nullTags() throws {
+        let json = """
+        {
+            "id": "stream-1",
+            "user_id": "123",
+            "user_login": "twitchdev",
+            "user_name": "TwitchDev",
+            "game_id": "",
+            "game_name": "",
+            "type": "live",
+            "title": "No tags here",
+            "tags": null,
+            "viewer_count": 42,
+            "started_at": "2024-01-01T00:00:00Z",
+            "language": "en",
+            "thumbnail_url": "https://example.com/{width}x{height}.jpg",
+            "is_mature": false
+        }
+        """.data(using: .utf8)!
+
+        let stream = try JSONDecoder.twitch().decode(TwitchStream.self, from: json)
+        XCTAssertEqual(stream.tags, [])
+    }
+
     // MARK: - TwitchGame
 
     func test_decodeTwitchGame() throws {

@@ -4,6 +4,12 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [0.3.4] - 2026-06-12
+
+### Fixed
+
+- `TwitchStream` now decodes successfully when Helix returns `"tags": null` (which `Get Streams` / `Get Followed Streams` send for streams that have no tags set). Previously the non-optional `tags` array threw `DecodingError.valueNotFound`, failing the entire response decode. A null or absent `tags` field now decodes to an empty array.
+
 ## [0.3.0] - 2026-06-01
 
 ### Added
