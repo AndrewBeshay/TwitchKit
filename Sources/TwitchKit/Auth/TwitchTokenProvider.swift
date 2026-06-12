@@ -98,7 +98,19 @@ public actor TwitchTokenProvider: TwitchAccessTokenProvider {
 
         let storedToken = try await tokenStore.loadToken()
         cachedToken = storedToken
-        hasLoadedStoredToken = true
+        // Only latch a SUCCESSFUL load. A nil read is not proof of
+        // "signed out": Keychain-backed stores can transiently report
+        // protected items as missing (errSecItemNotFound) during early
+        // launch / prewarming after a reboot, before first unlock.
+        // Latching that nil would poison this provider for its entire
+        // lifetime — every later call short-circuiting to
+        // `.notAuthenticated` while a perfectly good token sits in the
+        // store. Leaving the flag false means signed-out providers pay
+        // one store read per call, which is negligible; transient misses
+        // self-heal on the next read. (`logout()` still latches — an
+        // explicit sign-out must not resurrect a token the store failed
+        // to delete.)
+        hasLoadedStoredToken = storedToken != nil
         return storedToken
     }
 }
