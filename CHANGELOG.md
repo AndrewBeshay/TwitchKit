@@ -6,11 +6,31 @@ TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series
 
 ## [Unreleased]
 
+### Added
+
+- Auth: `OAuthToken` now records `obtainedAt` (stamped when stored) and exposes `expiresAt`/`isExpired(within:at:)`; the token provider proactively refreshes tokens within 60 seconds of expiry instead of paying a failed 401 round-trip.
+- EventSub: an injectable `EventSubWebSocket` seam (`socketFactory` on `EventSubClient`/`TwitchClient`) so the WebSocket message-handling, dedup, keepalive, reconnect, and resubscribe paths are testable; ships with socket-driven tests.
+- EventSub: `EventSubWebhookVerifier.isTimestampFresh` and combined signature+freshness `isValid` overloads reject replayed webhook requests older than Twitch's 10-minute window.
+- Helix: `HelixError.transport(URLError)` preserves the underlying transport failure so callers can distinguish offline, timeout, and TLS errors.
+- Helix: async paged-sequence helpers for clips, videos, moderators, VIPs, banned users, unban requests, blocked terms, moderated channels, custom reward redemptions, polls, predictions, drops entitlements, user emotes, extension transactions, the user block list, and conduit shards.
+- Helix: batch-size and required-filter validation across the endpoint layer (emote sets, chat colors, redemptions, clip downloads, video deletion, drops entitlements, polls, streams, clips, videos, stream markers, teams), and per-endpoint page-size bounds — Get Chatters now accepts up to 1,000 per page.
+
+### Changed
+
+- Auth: Keychain items are scoped with `kSecAttrService`; legacy service-less items are migrated in place on first read and removed on logout.
+- EventSub: the message dedup cache survives reconnects (Twitch replays notifications across them); exhausting the non-live reconnect ladder now emits `.disconnected` instead of parking silently; the give-up behavior of the default `isLive: { false }` is documented on both initializers.
+- Helix: `updateConduitShards` returns `ConduitShardUpdateResult`, surfacing Twitch's per-shard `errors` array that was previously discarded.
+- Helix: `fetchAllStreamTags`/`fetchStreamTags` are deprecated (Twitch retired stream tags in 2023).
+- CI runs with code coverage enabled and gates on the DocC build.
+
 ### Fixed
 
 - Auth: a failed token refresh no longer logs the user out on transient errors (network timeouts, token-endpoint outages). The stored token is only destroyed when the OAuth server definitively rejects the refresh (a 400/401/403 OAuth error). Concurrent `refreshIfNeeded()` calls now coalesce onto a single in-flight refresh instead of racing the same refresh token, which Twitch rotates on use.
 - EventSub: the client can now deallocate after being dropped. Its path-monitor, receive-loop, keepalive-watchdog, and reconnect tasks previously retained the actor while suspended, making `deinit` (and its socket/monitor cleanup) unreachable once connected. The reconnect ladder also no longer grows an async frame per failed attempt.
 - EventSub: `connect(timeout:)` now honors its deadline. The internal session-welcome wait is cancellation-aware, so a connected-but-silent server fails the connect at the configured timeout instead of blocking until the socket errors.
+- EventSub: a partial resubscribe failure after reconnecting no longer wedges the reconnect ladder re-creating already-active subscriptions (409 conflicts are treated as already-subscribed), and stale subscription record IDs are pruned instead of accumulating.
+- Helix: `deleteAllEventSubSubscriptions` re-fetches the first page after each round of deletions instead of following a cursor invalidated by the deletes, which skipped subscriptions when more than one page existed.
+- Helix: `ExtensionLiveChannelsPage` decodes the plain-string pagination cursor Get Extension Live Channels actually returns; a second page previously failed the whole decode.
 - Helix: `ChannelPointsRedemptionStatus` now sends and returns Twitch's required uppercase values (`UNFULFILLED`/`FULFILLED`/`CANCELED`); the lowercase values previously caused 400s on redemption endpoints and made decoded statuses land in `.unknown`. Decoding remains tolerant of lowercase inputs.
 - Helix: stream schedule endpoints now decode Twitch's single-object `data` envelope (they could never decode before), and `updateChannelStreamSchedule` sends vacation settings as query parameters instead of a JSON body Twitch silently ignored.
 - Helix: `ShieldModeStatus.lastActivatedAt` is now optional and tolerates the empty string Twitch sends when Shield Mode was never activated; `AdSchedule`'s date fields tolerate the empty strings sent for offline channels. Both previously failed the whole response decode.

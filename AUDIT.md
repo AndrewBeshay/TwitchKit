@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-09 · **Commit audited:** `35d7b63` · **Scope:** all of `Sources/`, `Tests/`, `Examples/`, package manifest, CI, and docs (~10,300 lines of Swift).
 
-> **Status update (2026-07-09):** the P0 items below have been fixed on this branch — §1.1/§1.2 (`fix(auth)`), §1.4/§1.5 plus the §2 reconnect-recursion item (`fix(eventsub)`), and §1.6–§1.9/§1.11 (`fix(helix)`). Findings text is left as originally written for the record; P1/P2 items remain open.
+> **Status update (2026-07-09):** the P0, P1, and P2 items below have been fixed on this branch — see CHANGELOG.md's Unreleased section for the full list. Findings text is left as originally written for the record. Still open, deliberately deferred pending a local `swift test` run (this environment has no Swift toolchain): the Swift Testing migration, the `Date.ISO8601FormatStyle` swap (§4.2 — must not regress nanosecond-timestamp parsing), `connect()` cancellation-responsiveness (§2), the model-fidelity items in §2 (EventSub payload variants, missing broadcaster identity on follow/subscribe events, memberwise initializers), and a lint config.
 
 **Method:** full manual read of the core subsystems (auth/token lifecycle, HTTP layer, EventSub WebSocket client, webhook verifier), plus a systematic sweep of all ~25 Helix endpoint extension files, the model layer, and the test suite, with endpoint behavior cross-checked against the Twitch Helix API reference. Findings that depend on Twitch server behavior that could not be re-verified live are tagged **(unverified-external)**. The audit was static — the sandbox has no Swift toolchain, so nothing here was compiled or executed.
 
