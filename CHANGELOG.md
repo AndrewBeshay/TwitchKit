@@ -4,6 +4,21 @@ All notable changes to TwitchKit will be documented in this file.
 
 TwitchKit follows semantic versioning while it is pre-1.0. During the 0.x series, minor versions may include source-breaking API changes as the package matures.
 
+## [Unreleased]
+
+### Fixed
+
+- Auth: a failed token refresh no longer logs the user out on transient errors (network timeouts, token-endpoint outages). The stored token is only destroyed when the OAuth server definitively rejects the refresh (a 400/401/403 OAuth error). Concurrent `refreshIfNeeded()` calls now coalesce onto a single in-flight refresh instead of racing the same refresh token, which Twitch rotates on use.
+- EventSub: the client can now deallocate after being dropped. Its path-monitor, receive-loop, keepalive-watchdog, and reconnect tasks previously retained the actor while suspended, making `deinit` (and its socket/monitor cleanup) unreachable once connected. The reconnect ladder also no longer grows an async frame per failed attempt.
+- EventSub: `connect(timeout:)` now honors its deadline. The internal session-welcome wait is cancellation-aware, so a connected-but-silent server fails the connect at the configured timeout instead of blocking until the socket errors.
+- Helix: `ChannelPointsRedemptionStatus` now sends and returns Twitch's required uppercase values (`UNFULFILLED`/`FULFILLED`/`CANCELED`); the lowercase values previously caused 400s on redemption endpoints and made decoded statuses land in `.unknown`. Decoding remains tolerant of lowercase inputs.
+- Helix: stream schedule endpoints now decode Twitch's single-object `data` envelope (they could never decode before), and `updateChannelStreamSchedule` sends vacation settings as query parameters instead of a JSON body Twitch silently ignored.
+- Helix: `ShieldModeStatus.lastActivatedAt` is now optional and tolerates the empty string Twitch sends when Shield Mode was never activated; `AdSchedule`'s date fields tolerate the empty strings sent for offline channels. Both previously failed the whole response decode.
+
+### Removed
+
+- Helix: removed the chat-pin API surface (`fetchPinnedChatMessage`, `pinChatMessage`, `updatePinnedChatMessage`, `unpinChatMessage`, `PinnedChatMessage`, and the `pin` parameter of `sendChatMessage`). These wrapped a `chat/pins` endpoint that does not exist in the Helix API and always failed.
+
 ## [0.3.4] - 2026-06-12
 
 ### Fixed
