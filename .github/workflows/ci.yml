@@ -36,4 +36,12 @@ jobs:
           swift --version
 
       - name: Build and test
-        run: swift test
+        run: swift test --enable-code-coverage
+
+      # Gate on the DocC build so documentation breakage (which would fail
+      # the Swift Package Index doc build) is caught in CI, not after merge.
+      - name: Build documentation
+        run: |
+          swift package --allow-writing-to-directory .docc-build \
+            generate-documentation --target TwitchKit \
+            --output-path .docc-build
