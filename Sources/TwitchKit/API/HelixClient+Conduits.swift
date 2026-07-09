@@ -57,19 +57,36 @@ extension HelixClient {
     }
 
     /// Updates one or more EventSub conduit shards.
+    ///
+    /// Twitch responds with HTTP 202 and reports per-shard outcomes: shards it accepted in
+    /// `data` and shards it rejected in `errors`. The request can succeed while individual
+    /// shards fail, so check ``ConduitShardUpdateResult/errors`` for partial failures.
+    ///
+    /// - Parameters:
+    ///   - conduitID: The conduit whose shards are updated.
+    ///   - shards: The shard transport updates to apply.
+    /// - Returns: The per-shard successes and failures reported by Twitch.
+    /// - SeeAlso: [Update Conduit Shards](https://dev.twitch.tv/docs/api/reference/#update-conduit-shards)
     public func updateConduitShards(
         conduitID: String,
         shards: [EventSubConduitShardUpdate]
-    ) async throws -> [EventSubConduitShardUpdateResult] {
-        let response: HelixResponse<EventSubConduitShardUpdateResult> = try await request(
+    ) async throws -> ConduitShardUpdateResult {
+        let data = try await requestRawData(
             endpoint: "eventsub/conduits/shards",
             method: "PATCH",
             body: try JSONEncoder.twitch().encode(ConduitShardsUpdateRequest(
                 conduitId: conduitID,
                 shards: shards
-            ))
+            )),
+            acceptedStatusCodes: [200, 202],
+            fallbackMessage: "Conduit shard update response expected"
         )
-        return response.data
+        do {
+            let envelope = try JSONDecoder.twitch().decode(ConduitShardsUpdateResponse.self, from: data)
+            return ConduitShardUpdateResult(updated: envelope.data, errors: envelope.errors ?? [])
+        } catch {
+            throw HelixError.decodingFailed(error.localizedDescription)
+        }
     }
 }
 
@@ -85,6 +102,11 @@ private struct ConduitUpdateRequest: Encodable {
 private struct ConduitShardsUpdateRequest: Encodable {
     let conduitId: String
     let shards: [EventSubConduitShardUpdate]
+}
+
+private struct ConduitShardsUpdateResponse: Decodable {
+    let data: [EventSubConduitShard]
+    let errors: [ConduitShardUpdateError]?
 }
 
 public struct EventSubConduit: Decodable, Sendable, Equatable {
@@ -119,10 +141,47 @@ public struct EventSubConduitShardUpdate: Encodable, Sendable, Equatable {
     }
 }
 
-public struct EventSubConduitShardUpdateResult: Decodable, Sendable, Equatable {
+/// The outcome of an Update Conduit Shards request, including per-shard failures.
+public struct ConduitShardUpdateResult: Sendable, Equatable {
+    /// Shards Twitch updated successfully.
+    public let updated: [EventSubConduitShard]
+
+    /// Shards Twitch failed to update.
+    public let errors: [ConduitShardUpdateError]
+
+    /// Creates an update result.
+    ///
+    /// - Parameters:
+    ///   - updated: Shards Twitch updated successfully.
+    ///   - errors: Shards Twitch failed to update.
+    public init(updated: [EventSubConduitShard], errors: [ConduitShardUpdateError]) {
+        self.updated = updated
+        self.errors = errors
+    }
+}
+
+/// A per-shard failure reported by Update Conduit Shards.
+public struct ConduitShardUpdateError: Decodable, Sendable, Equatable {
+    /// The ID of the shard that failed to update.
     public let id: String
-    public let status: String
-    public let transport: EventSubConduitShardTransport
+
+    /// The reason the shard update failed.
+    public let message: String
+
+    /// An error code describing the failure, when Twitch includes one.
+    public let code: String?
+
+    /// Creates a per-shard failure.
+    ///
+    /// - Parameters:
+    ///   - id: The ID of the shard that failed to update.
+    ///   - message: The reason the shard update failed.
+    ///   - code: An error code describing the failure, if any.
+    public init(id: String, message: String, code: String? = nil) {
+        self.id = id
+        self.message = message
+        self.code = code
+    }
 }
 
 public struct EventSubConduitShardTransport: Codable, Sendable, Equatable {

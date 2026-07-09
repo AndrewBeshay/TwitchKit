@@ -74,22 +74,30 @@ extension HelixClient {
     ///
     /// - Parameter filter: Optional mutually exclusive filter. Pass `nil` to delete all subscriptions.
     /// - Returns: The number of subscriptions deleted.
+    /// - Throws: `HelixError.networkError` if the subscription list does not drain after 100 pages.
     /// - SeeAlso: [Manage EventSub Subscriptions](https://dev.twitch.tv/docs/eventsub/manage-subscriptions/)
     @discardableResult
     public func deleteAllEventSubSubscriptions(filter: EventSubSubscriptionFilter? = nil) async throws -> Int {
         var deletedCount = 0
-        var cursor: String?
 
-        repeat {
-            let page = try await fetchEventSubSubscriptionsPage(filter: filter, after: cursor)
+        // Deleting shifts the remaining subscriptions, which invalidates cursors captured
+        // before the deletes. Re-fetch the first page after each round until it is empty
+        // instead of following stale pagination.
+        let maxIterations = 100
+        for _ in 0..<maxIterations {
+            let page = try await fetchEventSubSubscriptionsPage(filter: filter)
+            if page.data.isEmpty {
+                return deletedCount
+            }
             for subscription in page.data {
                 try await deleteEventSubSubscription(id: subscription.id)
                 deletedCount += 1
             }
-            cursor = page.nextCursor
-        } while cursor != nil
+        }
 
-        return deletedCount
+        throw HelixError.networkError(
+            "deleteAllEventSubSubscriptions did not converge after \(maxIterations) pages"
+        )
     }
 
     /// Creates an EventSub subscription for the given event type.
