@@ -79,6 +79,15 @@ public actor EventSubClient {
     /// Continuation used to make connect() wait for session_welcome before returning.
     private var welcomeContinuation: CheckedContinuation<Void, Error>?
 
+    /// Monotonic counter handing each welcome wait a unique identity token.
+    private var nextWelcomeWaitID: UInt64 = 0
+
+    /// Identity of the wait whose continuation is currently stored in
+    /// `welcomeContinuation`. A cancellation handler may only tear down its
+    /// OWN wait — a later attempt can supersede the stored continuation, and a
+    /// stale cancellation must not kill the newer attempt's wait.
+    private var welcomeWaitID: UInt64 = 0
+
     /// Test seam: replaces the socket-opening body of a connect() attempt
     /// so the connect-coalescing logic can be exercised without a real
     /// WebSocket (there is no socket seam in this client — see
@@ -92,6 +101,29 @@ public actor EventSubClient {
 
     /// Internal, for tests only — true while a connect() attempt is in flight.
     var isConnectingForTesting: Bool { isConnecting }
+
+    /// Internal, for tests only — drives the private welcome-wait machinery
+    /// directly, since `connectBodyForTesting` replaces the whole socket-open
+    /// body and therefore never reaches it (see EventSubLifecycleTests).
+    func waitForWelcomeForTesting(timeout: Duration) async throws {
+        try await waitForWelcome(timeout: timeout)
+    }
+
+    /// Internal, for tests only — resumes the parked welcome wait the way the
+    /// session_welcome handler does (mechanics only; no session state is set).
+    func deliverWelcomeForTesting() {
+        welcomeContinuation?.resume()
+        welcomeContinuation = nil
+    }
+
+    /// Internal, for tests only — true while a welcome wait is parked.
+    var hasWelcomeWaiterForTesting: Bool { welcomeContinuation != nil }
+
+    /// Internal, for tests only — arms the keepalive watchdog the way a
+    /// session_welcome/session_keepalive message does.
+    func armKeepaliveForTesting() {
+        updateKeepaliveDeadline()
+    }
 
     /// The in-flight connect() attempt, if any. One shared client serves
     /// every consumer on an account (e.g. one chat session per open
@@ -155,9 +187,14 @@ public actor EventSubClient {
     private func startPathMonitorIfNeeded() {
         guard pathMonitorTask == nil else { return }
         pathMonitor.start()
-        pathMonitorTask = Task { [weak self] in
-            guard let self else { return }
-            for await status in self.pathMonitor.pathUpdates {
+        // Capture the (Sendable) monitor itself, not the client, to iterate
+        // the never-ending update stream: a single `guard let self` before
+        // the loop would pin the client alive while suspended on the stream,
+        // making deinit unreachable. Instead, self is re-acquired per update,
+        // so a strong reference exists only while one update is handled.
+        pathMonitorTask = Task { [weak self, pathMonitor] in
+            for await status in pathMonitor.pathUpdates {
+                guard let self else { return }
                 await self.handlePathStatus(status)
             }
         }
@@ -179,7 +216,7 @@ public actor EventSubClient {
                 reconnectAttempts = 0           // reset backoff — restore is "attempt 1"
                 reconnectTask?.cancel()
                 emit(.reconnecting)
-                reconnectTask = Task { await attemptReconnect() }
+                reconnectTask = makeReconnectTask()
             }
         }
     }
@@ -308,14 +345,19 @@ public actor EventSubClient {
         let taskId = ObjectIdentifier(task)
         receiveTasks[taskId]?.cancel()
         receiveTasks[taskId] = Task { [weak self, weak task] in
-            guard let self, let task else { return }
+            // Re-acquire self per message: receive() can suspend for the whole
+            // life of the socket, and holding the client across that await
+            // would keep it alive forever (deinit unreachable). The strong
+            // reference exists only while one message is dispatched.
             while !Task.isCancelled {
+                guard let task else { return }
                 do {
                     let message = try await task.receive()
+                    guard let self else { return }
                     await self.handleMessage(message, from: task)
                 } catch {
                     logger.error("❌ EventSub: receive error: \(error.localizedDescription)")
-                    await self.receiveLoopDidEnd(for: task, error: error)
+                    await self?.receiveLoopDidEnd(for: task, error: error)
                     return
                 }
             }
@@ -398,29 +440,65 @@ public actor EventSubClient {
         keepaliveDeadline = ContinuousClock().now.advanced(by: .seconds(keepaliveTimeout + 5))
         guard keepaliveTask == nil else { return }
 
+        // The watchdog loop lives in the Task closure — not in an
+        // actor-isolated method — so the client is re-acquired per step and
+        // never held across the sleep. (A `guard let self` wrapping the whole
+        // loop would pin the client alive for the watchdog's entire life,
+        // making deinit unreachable.) Each decision is computed on the actor
+        // via optional chaining, so no strong binding outlives that one call.
         keepaliveTask = Task { [weak self] in
-            guard let self else { return }
-            await self.runKeepaliveWatchdog()
+            while !Task.isCancelled {
+                guard let step = await self?.keepaliveWatchdogStep() else { return }
+                switch step {
+                case .sleep(let deadline):
+                    try? await ContinuousClock().sleep(until: deadline)
+                case .expired:
+                    await self?.keepaliveDidExpire()
+                    return
+                case .idle:
+                    await self?.clearExitedKeepaliveTask()
+                    return
+                }
+            }
         }
     }
 
-    private func runKeepaliveWatchdog() async {
-        while !Task.isCancelled {
-            guard let deadline = keepaliveDeadline else {
-                keepaliveTask = nil
-                return
-            }
+    /// One decision of the keepalive watchdog. `.sleep` when the deadline is
+    /// still ahead (keepalive/notification messages keep pushing it forward),
+    /// `.expired` when it has passed, `.idle` when there is no deadline at all
+    /// (the connection was torn down, so the watchdog should exit).
+    private enum KeepaliveStep: Sendable {
+        case sleep(until: ContinuousClock.Instant)
+        case expired
+        case idle
+    }
 
-            let now = ContinuousClock().now
-            if now < deadline {
-                try? await ContinuousClock().sleep(until: deadline)
-                continue
-            }
-
-            keepaliveTask = nil
-            handleDisconnect()
-            return
+    /// Computed on the actor so the watchdog Task reads a consistent deadline.
+    private func keepaliveWatchdogStep() -> KeepaliveStep {
+        guard let deadline = keepaliveDeadline else { return .idle }
+        if ContinuousClock().now < deadline {
+            return .sleep(until: deadline)
         }
+        return .expired
+    }
+
+    /// The keepalive deadline passed without a message — treat the socket as
+    /// dead. Runs on the actor from the watchdog Task; the cancellation guard
+    /// closes the hop between step computation and this call: disconnect()
+    /// may have cancelled this watchdog (and possibly armed a fresh one) in
+    /// between, and a stale watchdog must not nil the new task or tear down
+    /// the new connection.
+    private func keepaliveDidExpire() {
+        guard !Task.isCancelled else { return }
+        keepaliveTask = nil
+        handleDisconnect()
+    }
+
+    /// The watchdog observed a nil deadline and is exiting — drop our
+    /// reference to it. Same stale-watchdog guard as `keepaliveDidExpire()`.
+    private func clearExitedKeepaliveTask() {
+        guard !Task.isCancelled else { return }
+        keepaliveTask = nil
     }
 
     // MARK: - Reconnection
@@ -466,15 +544,36 @@ public actor EventSubClient {
         if isNetworkAvailable {
             emit(.reconnecting)
             reconnectTask?.cancel()
-            reconnectTask = Task { await attemptReconnect() }
+            reconnectTask = makeReconnectTask()
         } else {
             emit(.waitingForNetwork)   // parked; handlePathStatus(.satisfied) will resume
         }
     }
 
-    private func attemptReconnect() async {
-        guard shouldReconnect else { return }
-        guard isNetworkAvailable else { emit(.waitingForNetwork); return }  // park
+    /// The reconnect ladder as a loop living in the Task closure — not in an
+    /// actor-isolated method — for the same two reasons as the keepalive
+    /// watchdog: a `Task { await attemptReconnect() }` would pin the client
+    /// alive for the entire ladder (backoff sleeps included), making deinit
+    /// unreachable while a reconnect is pending; and recursing on failure
+    /// (the previous shape) grew an async frame per attempt, unbounded for
+    /// live channels, which retry forever. Self is re-acquired per step and
+    /// never held across the backoff sleep.
+    private func makeReconnectTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                guard let delay = await self?.nextReconnectDelay() else { return }
+                try? await Task.sleep(for: delay)
+                guard let finished = await self?.performReconnectAttempt() else { return }
+                if finished { return }
+            }
+        }
+    }
+
+    /// Evaluates the reconnect gates and backoff ladder for the next attempt.
+    /// Returns the delay to sleep before attempting, or `nil` to park/stop.
+    private func nextReconnectDelay() async -> Duration? {
+        guard shouldReconnect else { return nil }
+        guard isNetworkAvailable else { emit(.waitingForNetwork); return nil }  // park
 
         let live = await isLive()
         reconnectAttempts += 1
@@ -484,24 +583,74 @@ public actor EventSubClient {
             isLive: live,
             attempt: reconnectAttempts
         )
-        guard case .attempt(let delay) = decision.action else { return }
+        guard case .attempt(let delay) = decision.action else { return nil }
+        return delay
+    }
 
-        try? await Task.sleep(for: delay)
-        guard shouldReconnect, !Task.isCancelled else { return }
+    /// One post-backoff connection attempt. Returns `true` when the ladder
+    /// should stop looping — either the connection (and resubscribe) succeeded
+    /// or the client no longer wants to reconnect — and `false` to retry.
+    private func performReconnectAttempt() async -> Bool {
+        guard shouldReconnect, !Task.isCancelled else { return true }
 
         do {
             try await openConnection(to: Self.websocketURL, resetReconnectAttempts: false, timeout: .seconds(15))
             try await resubscribeAll()
+            return true
         } catch {
-            await attemptReconnect()
+            return false
         }
     }
 
     private func waitForWelcome() async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            welcomeContinuation?.resume(throwing: HelixError.networkError("Superseded EventSub connection attempt"))
-            welcomeContinuation = continuation
+        // Cancellation-aware: connect()'s timeout works by cancelling this
+        // wait via the task group, and the group must then AWAIT the cancelled
+        // child — a continuation that ignores cancellation would block the
+        // group until a socket error or late welcome arrived (potentially
+        // minutes past the deadline).
+        nextWelcomeWaitID &+= 1
+        let waitID = nextWelcomeWaitID
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                // Already cancelled? Then onCancel has ALREADY run — it fires
+                // immediately for an already-cancelled task, before this body
+                // — and found nothing to resume (our id wasn't stored yet), so
+                // parking here would hang forever. Resume right away, and
+                // crucially WITHOUT superseding a newer attempt's parked wait:
+                // a dead wait has no business tearing down a live one.
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                welcomeContinuation?.resume(throwing: HelixError.networkError("Superseded EventSub connection attempt"))
+                welcomeContinuation = continuation
+                welcomeWaitID = waitID
+                // Cancellation landing after the check above is covered by
+                // onCancel: its hop onto the actor can only run once this
+                // synchronous body has finished, i.e. with our continuation
+                // stored under our id. Re-check anyway as belt-and-braces —
+                // cancelWelcomeWait's guards make a second call a no-op, so
+                // double-resume is impossible.
+                if Task.isCancelled {
+                    cancelWelcomeWait(id: waitID)
+                }
+            }
+        } onCancel: {
+            // Nonisolated — hop to the actor. If this wait already resumed
+            // (welcome arrived, disconnect, or a superseding attempt), the
+            // identity + presence guards in cancelWelcomeWait make it a no-op.
+            Task { await self.cancelWelcomeWait(id: waitID) }
         }
+    }
+
+    /// Resumes the parked welcome wait with `CancellationError`, but only if
+    /// it is still the wait identified by `id` and still parked. Every other
+    /// resume site nils `welcomeContinuation` after resuming, so a late or
+    /// stale cancellation falls through both guards harmlessly.
+    private func cancelWelcomeWait(id: UInt64) {
+        guard id == welcomeWaitID, let continuation = welcomeContinuation else { return }
+        welcomeContinuation = nil
+        continuation.resume(throwing: CancellationError())
     }
 
     private func waitForWelcome(timeout: Duration) async throws {
