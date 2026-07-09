@@ -49,7 +49,37 @@ public actor TwitchTokenProvider: TwitchAccessTokenProvider {
         try await tokenStore.saveToken(token)
     }
 
+    /// The in-flight refresh attempt, if any. Actors are reentrant, so two
+    /// tasks calling refreshIfNeeded() concurrently would both suspend at
+    /// the network call and race with the same refresh token — and Twitch
+    /// rotates refresh tokens on use, so the loser would clobber the fresh
+    /// token and kill the session. Concurrent callers await this task and
+    /// share its outcome instead of issuing a second refresh.
+    private var inFlightRefresh: Task<Void, Error>?
+
     public func refreshIfNeeded() async throws {
+        // Coalesce concurrent callers onto the in-flight attempt: they
+        // succeed together or fail with the same underlying error.
+        if let inFlightRefresh {
+            try await inFlightRefresh.value
+            return
+        }
+
+        // Unstructured Task (inheriting this actor's isolation) so the
+        // attempt's lifetime is owned by the provider, not the first
+        // caller — a cancelled initiator must not tear the refresh out
+        // from under the coalesced waiters.
+        let attempt = Task {
+            try await performRefresh()
+        }
+        inFlightRefresh = attempt
+        defer { inFlightRefresh = nil }
+        try await attempt.value
+    }
+
+    private func performRefresh() async throws {
+        // Read the refresh token here, inside the attempt, so it reflects
+        // the token that is current at the moment the network call is made.
         let token = try await token()
         guard let refreshToken = token.refreshToken else {
             tokenProviderLogger.warning("Token refresh requested but no refresh token is available")
@@ -61,8 +91,42 @@ public actor TwitchTokenProvider: TwitchAccessTokenProvider {
             try await setToken(refreshedToken)
             tokenProviderLogger.info("Token refresh succeeded")
         } catch {
-            try await logout()
+            // Only destroy the stored token when the OAuth server
+            // DEFINITIVELY rejected the refresh. A network timeout, a
+            // cancellation, or a 5xx from the token endpoint says nothing
+            // about the refresh token's validity — logging out on those
+            // would erase a perfectly recoverable session over a blip, and
+            // the same refresh token remains usable on the next attempt.
+            if Self.isDefinitiveRefreshRejection(error) {
+                tokenProviderLogger.warning("Token refresh rejected by OAuth server; logging out")
+                try await logout()
+            }
             throw error
+        }
+    }
+
+    /// Whether a refresh failure proves the session is dead, so the stored
+    /// token should be destroyed. Only a client-error rejection from the
+    /// token endpoint qualifies: `HelixError.oauth` with a 400/401/403
+    /// status (e.g. `invalid_grant` for a revoked or already-rotated
+    /// refresh token). A `nil` status means Twitch sent a parseable OAuth
+    /// error body without a status field — still a deliberate rejection,
+    /// so it counts. `oauth` with a 5xx status is the fallback path for a
+    /// token-endpoint outage, and everything else (networkError,
+    /// invalidResponse, CancellationError, …) is transient: rethrow and
+    /// leave the store alone.
+    private static func isDefinitiveRefreshRejection(_ error: any Error) -> Bool {
+        guard let helixError = error as? HelixError else {
+            return false
+        }
+        switch helixError {
+        case .unauthorized:
+            return true
+        case .oauth(let oauthError):
+            guard let status = oauthError.status else { return true }
+            return status == 400 || status == 401 || status == 403
+        default:
+            return false
         }
     }
 
