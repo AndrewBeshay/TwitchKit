@@ -55,6 +55,29 @@ public struct AdSchedule: Decodable, Sendable, Equatable {
     public let duration: Int?
     public let lastAdAt: Date?
     public let prerollFreeTime: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case snoozeCount, snoozeRefreshAt, nextAdAt, duration, lastAdAt, prerollFreeTime
+    }
+
+    /// Custom decoding solely for the date fields: Twitch sends `""` — an
+    /// empty string, not null — for `snooze_refresh_at`, `next_ad_at`, and
+    /// `last_ad_at` when the channel is offline or has never run an ad. The
+    /// keys are present, so `Date?` + the date strategy would try to parse
+    /// "" and throw. Decode the raw strings and map non-parsing values
+    /// (incl. empty) to nil instead.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        snoozeCount = try container.decodeIfPresent(Int.self, forKey: .snoozeCount)
+        snoozeRefreshAt = try container.decodeIfPresent(String.self, forKey: .snoozeRefreshAt)
+            .flatMap(TwitchDateParser.date(from:))
+        nextAdAt = try container.decodeIfPresent(String.self, forKey: .nextAdAt)
+            .flatMap(TwitchDateParser.date(from:))
+        duration = try container.decodeIfPresent(Int.self, forKey: .duration)
+        lastAdAt = try container.decodeIfPresent(String.self, forKey: .lastAdAt)
+            .flatMap(TwitchDateParser.date(from:))
+        prerollFreeTime = try container.decodeIfPresent(Int.self, forKey: .prerollFreeTime)
+    }
 }
 
 public struct AdSnooze: Decodable, Sendable, Equatable {

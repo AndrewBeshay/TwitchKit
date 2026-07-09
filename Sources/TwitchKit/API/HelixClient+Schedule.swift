@@ -26,15 +26,15 @@ extension HelixClient {
         HelixQuery.append(HelixQuery.item("utc_offset", utcOffset), to: &queryItems)
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
 
-        let response: HelixResponse<ChannelStreamSchedule> = try await request(
+        let data = try await requestRawData(
             endpoint: "schedule",
             queryItems: queryItems
         )
-        guard let schedule = response.data.first else { throw HelixError.notFound }
+        let envelope = try decodeScheduleEnvelope(from: data)
         return ChannelStreamSchedulePage(
-            schedule: schedule,
-            pagination: response.pagination,
-            metadata: response.metadata
+            schedule: envelope.data,
+            pagination: envelope.pagination,
+            metadata: nil
         )
     }
 
@@ -53,6 +53,9 @@ extension HelixClient {
 
     /// Updates a broadcaster's stream schedule settings.
     ///
+    /// Twitch accepts these settings as query parameters, not a request body,
+    /// so the provided fields are serialized into the request URL.
+    ///
     /// - Parameters:
     ///   - broadcasterId: The broadcaster's user ID.
     ///   - settings: Schedule settings to update.
@@ -61,11 +64,25 @@ extension HelixClient {
         forBroadcasterID broadcasterId: String,
         with settings: ChannelStreamScheduleSettingsUpdate
     ) async throws {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterId)]
+        HelixQuery.append(
+            settings.isVacationEnabled.map { URLQueryItem(name: "is_vacation_enabled", value: String($0)) },
+            to: &queryItems
+        )
+        HelixQuery.append(
+            settings.vacationStartTime.map { URLQueryItem(name: "vacation_start_time", value: TwitchDateParser.string(from: $0)) },
+            to: &queryItems
+        )
+        HelixQuery.append(
+            settings.vacationEndTime.map { URLQueryItem(name: "vacation_end_time", value: TwitchDateParser.string(from: $0)) },
+            to: &queryItems
+        )
+        HelixQuery.append(HelixQuery.item("timezone", settings.timezone), to: &queryItems)
+
         try await requestNoContent(
             endpoint: "schedule/settings",
             method: "PATCH",
-            queryItems: [URLQueryItem(name: "broadcaster_id", value: broadcasterId)],
-            body: try JSONEncoder.twitch().encode(settings)
+            queryItems: queryItems
         )
     }
 
@@ -80,14 +97,13 @@ extension HelixClient {
         forBroadcasterID broadcasterId: String,
         segment: ChannelStreamScheduleSegmentCreate
     ) async throws -> ChannelStreamSchedule {
-        let response: HelixResponse<ChannelStreamSchedule> = try await request(
+        let data = try await requestRawData(
             endpoint: "schedule/segment",
             method: "POST",
             queryItems: [URLQueryItem(name: "broadcaster_id", value: broadcasterId)],
             body: try JSONEncoder.twitch().encode(segment)
         )
-        guard let schedule = response.data.first else { throw HelixError.notFound }
-        return schedule
+        return try decodeScheduleEnvelope(from: data).data
     }
 
     /// Updates a stream schedule segment.
@@ -103,7 +119,7 @@ extension HelixClient {
         segmentID segmentId: String,
         with update: ChannelStreamScheduleSegmentUpdate
     ) async throws -> ChannelStreamSchedule {
-        let response: HelixResponse<ChannelStreamSchedule> = try await request(
+        let data = try await requestRawData(
             endpoint: "schedule/segment",
             method: "PATCH",
             queryItems: [
@@ -112,8 +128,7 @@ extension HelixClient {
             ],
             body: try JSONEncoder.twitch().encode(update)
         )
-        guard let schedule = response.data.first else { throw HelixError.notFound }
-        return schedule
+        return try decodeScheduleEnvelope(from: data).data
     }
 
     /// Deletes a stream schedule segment.
@@ -136,6 +151,20 @@ extension HelixClient {
         )
     }
 
+    private func decodeScheduleEnvelope(from data: Data) throws -> ScheduleEnvelope {
+        do {
+            return try JSONDecoder.twitch().decode(ScheduleEnvelope.self, from: data)
+        } catch {
+            throw HelixError.decodingFailed(error.localizedDescription)
+        }
+    }
+}
+
+/// Schedule endpoints return `data` as a single object — not the usual
+/// Helix `data` array — so `HelixResponse` cannot decode them.
+private struct ScheduleEnvelope: Decodable {
+    let data: ChannelStreamSchedule
+    let pagination: Pagination?
 }
 
 public struct ChannelStreamSchedulePage: Sendable, Equatable {

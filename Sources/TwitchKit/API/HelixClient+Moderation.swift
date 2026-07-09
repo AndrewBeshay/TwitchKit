@@ -604,7 +604,29 @@ public struct ShieldModeStatus: Decodable, Sendable, Equatable {
     public let moderatorId: String
     public let moderatorName: String
     public let moderatorLogin: String
-    public let lastActivatedAt: Date
+
+    /// When Shield Mode was last activated, or `nil` if the broadcaster has
+    /// never activated it.
+    public let lastActivatedAt: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case isActive, moderatorId, moderatorName, moderatorLogin, lastActivatedAt
+    }
+
+    /// Custom decoding solely for `lastActivatedAt`: Twitch sends
+    /// `"last_activated_at": ""` — an empty string, not null — when Shield
+    /// Mode has never been activated. The key is present, so `Date?` + the
+    /// date strategy would try to parse "" and throw. Decode the raw string
+    /// and map non-parsing values (incl. empty) to nil instead.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isActive = try container.decode(Bool.self, forKey: .isActive)
+        moderatorId = try container.decode(String.self, forKey: .moderatorId)
+        moderatorName = try container.decode(String.self, forKey: .moderatorName)
+        moderatorLogin = try container.decode(String.self, forKey: .moderatorLogin)
+        let rawLastActivatedAt = try container.decodeIfPresent(String.self, forKey: .lastActivatedAt)
+        lastActivatedAt = rawLastActivatedAt.flatMap(TwitchDateParser.date(from:))
+    }
 }
 
 /// A warning applied to a chat user.

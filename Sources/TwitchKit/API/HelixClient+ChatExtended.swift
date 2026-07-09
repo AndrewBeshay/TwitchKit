@@ -140,63 +140,6 @@ extension HelixClient {
         )
     }
 
-    /// Gets the currently pinned chat message for a broadcaster.
-    public func fetchPinnedChatMessage(broadcasterID: String, moderatorID: String) async throws -> PinnedChatMessage? {
-        let response: HelixResponse<PinnedChatMessage> = try await request(
-            endpoint: "chat/pins",
-            queryItems: [
-                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-                URLQueryItem(name: "moderator_id", value: moderatorID),
-            ]
-        )
-        return response.data.first
-    }
-
-    /// Pins a chat message.
-    public func pinChatMessage(
-        broadcasterID: String,
-        moderatorID: String,
-        messageID: String,
-        durationSeconds: Int? = nil
-    ) async throws {
-        var queryItems = [
-            URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-            URLQueryItem(name: "moderator_id", value: moderatorID),
-            URLQueryItem(name: "message_id", value: messageID),
-        ]
-        HelixQuery.append(HelixQuery.item("duration_seconds", durationSeconds.map(String.init)), to: &queryItems)
-        try await requestNoContent(endpoint: "chat/pins", method: "PUT", queryItems: queryItems)
-    }
-
-    /// Updates the duration of a pinned chat message.
-    public func updatePinnedChatMessage(
-        broadcasterID: String,
-        moderatorID: String,
-        messageID: String,
-        durationSeconds: Int? = nil
-    ) async throws {
-        var queryItems = [
-            URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-            URLQueryItem(name: "moderator_id", value: moderatorID),
-            URLQueryItem(name: "message_id", value: messageID),
-        ]
-        HelixQuery.append(HelixQuery.item("duration_seconds", durationSeconds.map(String.init)), to: &queryItems)
-        try await requestNoContent(endpoint: "chat/pins", method: "PATCH", queryItems: queryItems)
-    }
-
-    /// Unpins a chat message.
-    public func unpinChatMessage(broadcasterID: String, moderatorID: String, messageID: String) async throws {
-        try await requestNoContent(
-            endpoint: "chat/pins",
-            method: "DELETE",
-            queryItems: [
-                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-                URLQueryItem(name: "moderator_id", value: moderatorID),
-                URLQueryItem(name: "message_id", value: messageID),
-            ]
-        )
-    }
-
     /// Gets chat colors for one or more users.
     public func fetchUserChatColors(userIDs: [String]) async throws -> [UserChatColor] {
         guard !userIDs.isEmpty else {
@@ -303,22 +246,6 @@ public struct SharedChatSession: Decodable, Sendable, Equatable {
     public struct Participant: Decodable, Sendable, Equatable {
         public let broadcasterId: String
     }
-}
-
-/// A pinned chat message.
-public struct PinnedChatMessage: Decodable, Sendable, Equatable {
-    public let messageId: String
-    public let broadcasterId: String
-    public let senderUserId: String
-    public let senderUserLogin: String
-    public let senderUserName: String
-    public let pinnedByUserId: String
-    public let pinnedByUserLogin: String
-    public let pinnedByUserName: String
-    public let message: ChatMessage.ChatMessageBody
-    public let startsAt: Date
-    public let endsAt: Date?
-    public let updatedAt: Date
 }
 
 /// The chat color for a user.

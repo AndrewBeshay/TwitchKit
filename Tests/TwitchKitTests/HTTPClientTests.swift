@@ -308,8 +308,7 @@ final class HTTPClientTests: XCTestCase {
             senderId: "sender-id",
             message: "Hello from TwitchKit",
             replyParentMessageId: "parent-message-id",
-            forSourceOnly: true,
-            pin: true
+            forSourceOnly: true
         )
 
         XCTAssertEqual(result.messageId, "message-1")
@@ -328,7 +327,7 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(object["message"] as? String, "Hello from TwitchKit")
         XCTAssertEqual(object["reply_parent_message_id"] as? String, "parent-message-id")
         XCTAssertEqual(object["for_source_only"] as? Bool, true)
-        XCTAssertEqual(object["pin"] as? Bool, true)
+        XCTAssertNil(object["pin"])
     }
 
     func test_sendChatMessageReturnsDropReasonWhenMessageIsNotSent() async throws {
@@ -1422,16 +1421,86 @@ final class HTTPClientTests: XCTestCase {
         )
 
         let requests = await transport.recordedRequests()
-        let scheduleBody = try XCTUnwrap(requests[0].httpBody)
-        let scheduleObject = try XCTUnwrap(JSONSerialization.jsonObject(with: scheduleBody) as? [String: Any])
-        XCTAssertEqual(scheduleObject["is_vacation_enabled"] as? Bool, true)
-        XCTAssertEqual(scheduleObject["timezone"] as? String, "Australia/Sydney")
-        XCTAssertTrue((scheduleObject["vacation_start_time"] as? String)?.contains("T") == true)
+        // Update Channel Stream Schedule takes its settings as query parameters, not a body.
+        let scheduleRequest = requests[0]
+        XCTAssertEqual(scheduleRequest.httpMethod, "PATCH")
+        XCTAssertNil(scheduleRequest.httpBody)
+        let scheduleURL = try XCTUnwrap(scheduleRequest.url)
+        let scheduleComponents = try XCTUnwrap(URLComponents(url: scheduleURL, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(scheduleComponents.path, "/helix/schedule/settings")
+        let scheduleQuery = Dictionary(
+            uniqueKeysWithValues: (scheduleComponents.queryItems ?? []).map { ($0.name, $0.value) }
+        )
+        XCTAssertEqual(scheduleQuery["broadcaster_id"], "broadcaster")
+        XCTAssertEqual(scheduleQuery["is_vacation_enabled"], "true")
+        XCTAssertEqual(scheduleQuery["vacation_start_time"], TwitchDateParser.string(from: date))
+        XCTAssertEqual(scheduleQuery["vacation_end_time"], TwitchDateParser.string(from: date))
+        XCTAssertEqual(scheduleQuery["timezone"], "Australia/Sydney")
 
         let pollBody = try XCTUnwrap(requests[1].httpBody)
         let pollObject = try XCTUnwrap(JSONSerialization.jsonObject(with: pollBody) as? [String: Any])
         XCTAssertEqual(pollObject["broadcaster_id"] as? String, "broadcaster")
         XCTAssertEqual(pollObject["duration"] as? Int, 60)
+    }
+
+    /// Schedule endpoints return `data` as a single OBJECT, not the usual
+    /// Helix `data` array, so they need the dedicated envelope decode path.
+    func test_fetchChannelStreamScheduleDecodesSingleObjectEnvelope() async throws {
+        let scheduleBody = """
+        {
+          "data": {
+            "segments": [
+              {
+                "id": "segment-1",
+                "start_time": "2024-07-01T18:00:00Z",
+                "end_time": "2024-07-01T19:00:00Z",
+                "title": "Weekly stream",
+                "canceled_until": null,
+                "category": { "id": "509670", "name": "Science & Technology" },
+                "is_recurring": true
+              }
+            ],
+            "broadcaster_id": "141981764",
+            "broadcaster_name": "TwitchDev",
+            "broadcaster_login": "twitchdev",
+            "vacation": null
+          },
+          "pagination": { "cursor": "next-cursor" }
+        }
+        """
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: scheduleBody),
+            .json(statusCode: 200, body: scheduleBody),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchChannelStreamSchedulePage(forBroadcasterID: "141981764")
+
+        XCTAssertEqual(page.schedule.broadcasterId, "141981764")
+        XCTAssertEqual(page.schedule.broadcasterLogin, "twitchdev")
+        XCTAssertEqual(page.schedule.segments.map(\.id), ["segment-1"])
+        XCTAssertEqual(page.schedule.segments.first?.isRecurring, true)
+        XCTAssertNil(page.schedule.vacation)
+        XCTAssertEqual(page.nextCursor, "next-cursor")
+
+        let created = try await api.createChannelStreamScheduleSegment(
+            forBroadcasterID: "141981764",
+            segment: ChannelStreamScheduleSegmentCreate(
+                startTime: Date(timeIntervalSince1970: 1_704_067_200),
+                timezone: "America/New_York",
+                isRecurring: true
+            )
+        )
+        XCTAssertEqual(created.segments.first?.title, "Weekly stream")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/schedule?broadcaster_id=141981764"
+        )
+        XCTAssertEqual(requests.last?.httpMethod, "POST")
     }
 
     func test_newHelixCoverageUsesExpectedAdsBitsAndDiscoveryEndpoints() async throws {

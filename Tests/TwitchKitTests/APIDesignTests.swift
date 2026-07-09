@@ -340,4 +340,24 @@ final class APIDesignTests: XCTestCase {
         XCTAssertEqual(redemption.rawValue, "future_status")
         XCTAssertEqual(subscriptionStatus.rawValue, "future_subscription_status")
     }
+
+    /// Helix requires and returns UPPERCASE redemption statuses; decoding is
+    /// also tolerant of lowercase inputs (e.g. EventSub redemption payloads).
+    func test_channelPointsRedemptionStatusEmitsUppercaseAndDecodesCaseInsensitively() throws {
+        let uppercase = try JSONDecoder.twitch().decode(ChannelPointsRedemptionStatus.self, from: Data(#""FULFILLED""#.utf8))
+        let lowercase = try JSONDecoder.twitch().decode(ChannelPointsRedemptionStatus.self, from: Data(#""fulfilled""#.utf8))
+        let unknown = try JSONDecoder.twitch().decode(ChannelPointsRedemptionStatus.self, from: Data(#""future_status""#.utf8))
+
+        XCTAssertEqual(uppercase, .fulfilled)
+        XCTAssertEqual(lowercase, .fulfilled)
+        XCTAssertEqual(unknown, .unknown("future_status"))
+        XCTAssertEqual(unknown.rawValue, "future_status")
+
+        XCTAssertEqual(ChannelPointsRedemptionStatus.unfulfilled.rawValue, "UNFULFILLED")
+        XCTAssertEqual(ChannelPointsRedemptionStatus.fulfilled.rawValue, "FULFILLED")
+        XCTAssertEqual(ChannelPointsRedemptionStatus.canceled.rawValue, "CANCELED")
+
+        let encoded = try JSONEncoder.twitch().encode(ChannelPointsRedemptionStatus.fulfilled)
+        XCTAssertEqual(String(data: encoded, encoding: .utf8), #""FULFILLED""#)
+    }
 }

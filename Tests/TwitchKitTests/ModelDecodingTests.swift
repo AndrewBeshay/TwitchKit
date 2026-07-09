@@ -576,4 +576,91 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertTrue(channel.isLive)
         XCTAssertNotNil(channel.startedAt)
     }
+
+    // MARK: - ShieldModeStatus
+
+    /// GET /moderation/shield_mode returns `"last_activated_at": ""` — an
+    /// empty string, NOT null — for broadcasters who have never activated
+    /// Shield Mode, which would make the date strategy throw.
+    func test_decodeShieldModeStatusNeverActivated_emptyLastActivatedAt() throws {
+        let json = """
+        {
+            "is_active": false,
+            "moderator_id": "",
+            "moderator_name": "",
+            "moderator_login": "",
+            "last_activated_at": ""
+        }
+        """.data(using: .utf8)!
+
+        let status = try JSONDecoder.twitch().decode(ShieldModeStatus.self, from: json)
+
+        XCTAssertFalse(status.isActive)
+        XCTAssertNil(status.lastActivatedAt)
+    }
+
+    func test_decodeShieldModeStatusActivated_parsesLastActivatedAt() throws {
+        let json = """
+        {
+            "is_active": true,
+            "moderator_id": "98765",
+            "moderator_name": "SimplySimple",
+            "moderator_login": "simplysimple",
+            "last_activated_at": "2023-08-01T18:11:47Z"
+        }
+        """.data(using: .utf8)!
+
+        let status = try JSONDecoder.twitch().decode(ShieldModeStatus.self, from: json)
+
+        XCTAssertTrue(status.isActive)
+        XCTAssertEqual(status.moderatorLogin, "simplysimple")
+        XCTAssertEqual(status.lastActivatedAt, try XCTUnwrap(TwitchDateParser.date(from: "2023-08-01T18:11:47Z")))
+    }
+
+    // MARK: - AdSchedule
+
+    /// GET /channels/ads returns `""` — an empty string, NOT null — for
+    /// `snooze_refresh_at`, `next_ad_at`, and `last_ad_at` when the channel
+    /// is offline or has never run an ad.
+    func test_decodeAdScheduleOffline_emptyDateStrings() throws {
+        let json = """
+        {
+            "snooze_count": 3,
+            "snooze_refresh_at": "",
+            "next_ad_at": "",
+            "duration": 0,
+            "last_ad_at": "",
+            "preroll_free_time": 0
+        }
+        """.data(using: .utf8)!
+
+        let schedule = try JSONDecoder.twitch().decode(AdSchedule.self, from: json)
+
+        XCTAssertEqual(schedule.snoozeCount, 3)
+        XCTAssertNil(schedule.snoozeRefreshAt)
+        XCTAssertNil(schedule.nextAdAt)
+        XCTAssertNil(schedule.lastAdAt)
+        XCTAssertEqual(schedule.duration, 0)
+        XCTAssertEqual(schedule.prerollFreeTime, 0)
+    }
+
+    func test_decodeAdScheduleLive_parsesDates() throws {
+        let json = """
+        {
+            "snooze_count": 1,
+            "snooze_refresh_at": "2024-01-01T01:00:00Z",
+            "next_ad_at": "2024-01-01T00:30:00Z",
+            "duration": 60,
+            "last_ad_at": "2024-01-01T00:00:00Z",
+            "preroll_free_time": 90
+        }
+        """.data(using: .utf8)!
+
+        let schedule = try JSONDecoder.twitch().decode(AdSchedule.self, from: json)
+
+        XCTAssertEqual(schedule.snoozeRefreshAt, try XCTUnwrap(TwitchDateParser.date(from: "2024-01-01T01:00:00Z")))
+        XCTAssertEqual(schedule.nextAdAt, try XCTUnwrap(TwitchDateParser.date(from: "2024-01-01T00:30:00Z")))
+        XCTAssertEqual(schedule.lastAdAt, try XCTUnwrap(TwitchDateParser.date(from: "2024-01-01T00:00:00Z")))
+        XCTAssertEqual(schedule.duration, 60)
+    }
 }
