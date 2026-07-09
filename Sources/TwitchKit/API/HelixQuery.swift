@@ -19,12 +19,16 @@ enum HelixQuery {
         to queryItems: inout [URLQueryItem],
         first: Int?,
         after cursor: String?,
-        before previousCursor: String? = nil
+        before previousCursor: String? = nil,
+        validRange: ClosedRange<Int> = 1...100
     ) throws {
         if let first {
-            guard (1...100).contains(first) else {
+            guard validRange.contains(first) else {
                 throw HelixError.badRequest(
-                    TwitchAPIError.fallback(status: 400, message: "Page size must be between 1 and 100")
+                    TwitchAPIError.fallback(
+                        status: 400,
+                        message: "Page size must be between \(validRange.lowerBound) and \(validRange.upperBound)"
+                    )
                 )
             }
             queryItems.append(URLQueryItem(name: "first", value: String(first)))

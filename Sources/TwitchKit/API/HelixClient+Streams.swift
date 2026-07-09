@@ -24,6 +24,22 @@ extension HelixClient {
         after cursor: String? = nil,
         before previousCursor: String? = nil
     ) async throws -> HelixPage<TwitchStream> {
+        guard userIDs.count <= 100 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 100 user IDs")
+            )
+        }
+        guard userLogins.count <= 100 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 100 user logins")
+            )
+        }
+        guard gameIDs.count <= 100 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 100 game IDs")
+            )
+        }
+
         var queryItems =
             HelixQuery.items("user_id", values: userIDs)
             + HelixQuery.items("user_login", values: userLogins)

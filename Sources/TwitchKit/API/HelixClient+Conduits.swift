@@ -56,6 +56,24 @@ extension HelixClient {
         return response.page
     }
 
+    /// Returns an async sequence of EventSub conduit shards.
+    ///
+    /// - Parameters:
+    ///   - conduitID: The conduit whose shards are returned.
+    ///   - status: Optional shard status filter.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Conduit Shards](https://dev.twitch.tv/docs/api/reference/#get-conduit-shards)
+    public func conduitShards(
+        conduitID: String,
+        status: ConduitShardStatus? = nil,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<EventSubConduitShard> {
+        var queryItems = [URLQueryItem(name: "conduit_id", value: conduitID)]
+        HelixQuery.append(HelixQuery.item("status", status?.rawValue), to: &queryItems)
+        return pagedRequest(endpoint: "eventsub/conduits/shards", queryItems: queryItems, pageSize: pageSize)
+    }
+
     /// Updates one or more EventSub conduit shards.
     ///
     /// Twitch responds with HTTP 202 and reports per-shard outcomes: shards it accepted in

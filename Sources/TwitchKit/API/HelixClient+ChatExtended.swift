@@ -2,6 +2,9 @@ import Foundation
 
 extension HelixClient {
     /// Gets one page of users connected to a broadcaster's chat.
+    ///
+    /// Get Chatters accepts a larger page size than most Helix endpoints:
+    /// `first` may be between 1 and 1,000.
     public func fetchChattersPage(
         broadcasterID: String,
         moderatorID: String,
@@ -12,7 +15,7 @@ extension HelixClient {
             URLQueryItem(name: "broadcaster_id", value: broadcasterID),
             URLQueryItem(name: "moderator_id", value: moderatorID),
         ]
-        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor, validRange: 1...1000)
 
         let response: HelixResponse<TwitchChatter> = try await request(
             endpoint: "chat/chatters",
@@ -22,25 +25,33 @@ extension HelixClient {
     }
 
     /// Returns an async sequence of users connected to a broadcaster's chat.
+    ///
+    /// Get Chatters accepts a larger page size than most Helix endpoints:
+    /// `pageSize` may be between 1 and 1,000.
     public func chatters(
         broadcasterID: String,
         moderatorID: String,
         pageSize: Int? = nil
     ) -> HelixPagedSequence<TwitchChatter> {
-        pagedRequest(
-            endpoint: "chat/chatters",
-            queryItems: [
-                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-                URLQueryItem(name: "moderator_id", value: moderatorID),
-            ],
-            pageSize: pageSize
-        )
+        HelixPagedSequence { cursor in
+            try await fetchChattersPage(
+                broadcasterID: broadcasterID,
+                moderatorID: moderatorID,
+                first: pageSize,
+                after: cursor
+            )
+        }
     }
 
     /// Gets emotes for one or more emote set IDs.
     public func fetchEmoteSets(ids: [String]) async throws -> [TwitchEmote] {
         guard !ids.isEmpty else {
             throw HelixError.badRequest(TwitchAPIError.fallback(status: 400, message: "At least one emote set ID is required"))
+        }
+        guard ids.count <= 25 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 25 emote set IDs")
+            )
         }
 
         let response: HelixResponse<TwitchEmote> = try await request(
@@ -62,6 +73,25 @@ extension HelixClient {
 
         let response: HelixResponse<TwitchEmote> = try await request(endpoint: "chat/emotes/user", queryItems: queryItems)
         return response.page
+    }
+
+    /// Returns an async sequence of emotes available to a user.
+    ///
+    /// Get User Emotes does not support a `first` page-size parameter,
+    /// so this sequence has no `pageSize` argument.
+    ///
+    /// - Parameters:
+    ///   - userID: The user's ID.
+    ///   - broadcasterID: Optional broadcaster ID to also include follower/subscriber emotes for that channel.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get User Emotes](https://dev.twitch.tv/docs/api/reference/#get-user-emotes)
+    public func userEmotes(
+        userID: String,
+        broadcasterID: String? = nil
+    ) -> HelixPagedSequence<TwitchEmote> {
+        HelixPagedSequence { cursor in
+            try await fetchUserEmotesPage(userID: userID, broadcasterID: broadcasterID, after: cursor)
+        }
     }
 
     /// Gets a broadcaster's chat settings.
@@ -144,6 +174,11 @@ extension HelixClient {
     public func fetchUserChatColors(userIDs: [String]) async throws -> [UserChatColor] {
         guard !userIDs.isEmpty else {
             throw HelixError.badRequest(TwitchAPIError.fallback(status: 400, message: "At least one user ID is required"))
+        }
+        guard userIDs.count <= 100 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 100 user IDs")
+            )
         }
         let response: HelixResponse<UserChatColor> = try await request(
             endpoint: "chat/color",

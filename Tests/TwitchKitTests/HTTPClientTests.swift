@@ -1308,6 +1308,194 @@ final class HTTPClientTests: XCTestCase {
         )
     }
 
+    func test_moderatorsSequenceFetchesNextPageUsingCursor() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                { "user_id": "1", "user_login": "mod1", "user_name": "Mod1" }
+              ],
+              "pagination": { "cursor": "next-cursor" }
+            }
+            """),
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                { "user_id": "2", "user_login": "mod2", "user_name": "Mod2" }
+              ],
+              "pagination": {}
+            }
+            """),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        var moderators: [String] = []
+        for try await moderator in api.moderators(broadcasterID: "broadcaster-id", pageSize: 1) {
+            moderators.append(moderator.userName)
+        }
+
+        XCTAssertEqual(moderators, ["Mod1", "Mod2"])
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(
+            requests[0].url?.absoluteString,
+            "https://api.twitch.tv/helix/moderation/moderators?broadcaster_id=broadcaster-id&first=1"
+        )
+        XCTAssertEqual(
+            requests[1].url?.absoluteString,
+            "https://api.twitch.tv/helix/moderation/moderators?broadcaster_id=broadcaster-id&first=1&after=next-cursor"
+        )
+    }
+
+    func test_fetchChattersPageAcceptsPageSizeAboveDefaultHelixLimit() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                { "user_id": "1", "user_login": "viewer", "user_name": "Viewer" }
+              ],
+              "pagination": {}
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.fetchChattersPage(broadcasterID: "broadcaster", moderatorID: "moderator", first: 1000)
+
+        let request = try await firstRecordedRequest(from: transport)
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/chat/chatters?broadcaster_id=broadcaster&moderator_id=moderator&first=1000"
+        )
+    }
+
+    func test_fetchChannelStreamSchedulePageRejectsPageSizeOverScheduleLimit() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchChannelStreamSchedulePage(forBroadcasterID: "broadcaster", first: 26)
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Page size must be between 1 and 25")
+        }
+    }
+
+    func test_fetchCustomRewardRedemptionsPageRequiresStatusWhenNoIDsSpecified() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchCustomRewardRedemptionsPage(broadcasterID: "broadcaster", rewardID: "reward")
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "A redemption status is required when no redemption IDs are specified")
+        }
+    }
+
+    func test_fetchEmoteSetsRejectsMoreThanTwentyFiveIDs() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchEmoteSets(ids: (1...26).map(String.init))
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Twitch allows up to 25 emote set IDs")
+        }
+    }
+
+    func test_deleteVideosRejectsEmptyIDs() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.deleteVideos(ids: [])
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "At least one video ID is required")
+        }
+    }
+
+    func test_fetchClipsPageRequiresExactlyOneFilter() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchClipsPage()
+            XCTFail("Expected bad request for zero filters")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Exactly one of broadcaster ID, game ID, or clip IDs must be specified")
+        }
+
+        do {
+            _ = try await api.fetchClipsPage(broadcasterID: "broadcaster", gameID: "game")
+            XCTFail("Expected bad request for multiple filters")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Exactly one of broadcaster ID, game ID, or clip IDs must be specified")
+        }
+    }
+
+    func test_fetchStreamsPageRejectsMoreThanOneHundredUserIDs() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchStreamsPage(userIDs: (1...101).map(String.init))
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Twitch allows up to 100 user IDs")
+        }
+    }
+
+    func test_fetchTeamsRequiresExactlyOneOfNameOrID() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchTeams(name: "team", id: "1")
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Exactly one of team name or team ID must be specified")
+        }
+    }
+
     func test_groupTwoHelixEndpointsUseExpectedPathsAndQueries() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 200, body: #"{"data":[]}"#),

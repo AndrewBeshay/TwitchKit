@@ -2,6 +2,7 @@ import Foundation
 
 extension HelixClient {
     /// Gets all stream tags or a subset by tag ID.
+    @available(*, deprecated, message: "Twitch deprecated stream tags in 2023; the endpoint returns empty data and is scheduled for removal.")
     public func fetchAllStreamTags(tagIDs: [String] = [], first: Int? = nil, after cursor: String? = nil) async throws -> HelixPage<StreamTag> {
         var queryItems = HelixQuery.items("tag_id", values: tagIDs)
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
@@ -13,6 +14,7 @@ extension HelixClient {
     }
 
     /// Gets stream tags set on a broadcaster's channel.
+    @available(*, deprecated, message: "Twitch deprecated stream tags in 2023; the endpoint returns empty data and is scheduled for removal.")
     public func fetchStreamTags(broadcasterID: String) async throws -> [StreamTag] {
         let response: HelixResponse<StreamTag> = try await request(
             endpoint: "streams/tags",
@@ -31,7 +33,15 @@ extension HelixClient {
     }
 
     /// Gets Twitch team information by name or ID.
+    ///
+    /// Exactly one of `name` or `id` must be specified.
     public func fetchTeams(name: String? = nil, id: String? = nil) async throws -> [TwitchTeam] {
+        guard (name != nil) != (id != nil) else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Exactly one of team name or team ID must be specified")
+            )
+        }
+
         var queryItems: [URLQueryItem] = []
         HelixQuery.append(HelixQuery.item("name", name), to: &queryItems)
         HelixQuery.append(HelixQuery.item("id", id), to: &queryItems)
@@ -72,6 +82,24 @@ extension HelixClient {
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
         let response: HelixResponse<BlockedUser> = try await request(endpoint: "users/blocks", queryItems: queryItems)
         return response.page
+    }
+
+    /// Returns an async sequence of users blocked by a broadcaster.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get User Block List](https://dev.twitch.tv/docs/api/reference/#get-user-block-list)
+    public func userBlockList(
+        broadcasterID: String,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<BlockedUser> {
+        pagedRequest(
+            endpoint: "users/blocks",
+            queryItems: [URLQueryItem(name: "broadcaster_id", value: broadcasterID)],
+            pageSize: pageSize
+        )
     }
 
     /// Blocks a user.

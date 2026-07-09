@@ -66,6 +66,17 @@ extension HelixClient {
         first: Int? = nil,
         after cursor: String? = nil
     ) async throws -> HelixPage<CustomRewardRedemption> {
+        guard ids.count <= 50 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 50 redemption IDs")
+            )
+        }
+        guard !ids.isEmpty || status != nil else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "A redemption status is required when no redemption IDs are specified")
+            )
+        }
+
         var queryItems = [
             URLQueryItem(name: "broadcaster_id", value: broadcasterID),
             URLQueryItem(name: "reward_id", value: rewardID)
@@ -73,7 +84,7 @@ extension HelixClient {
         queryItems += HelixQuery.items("id", values: ids)
         HelixQuery.append(HelixQuery.item("status", status?.rawValue), to: &queryItems)
         HelixQuery.append(HelixQuery.item("sort", sort), to: &queryItems)
-        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor, validRange: 1...50)
 
         let response: HelixResponse<CustomRewardRedemption> = try await request(
             endpoint: "channel_points/custom_rewards/redemptions",
@@ -82,12 +93,58 @@ extension HelixClient {
         return response.page
     }
 
+    /// Returns an async sequence of custom reward redemptions.
+    ///
+    /// Get Custom Reward Redemption caps its page size below the usual Helix
+    /// limit: `pageSize` may be between 1 and 50.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - rewardID: The custom reward whose redemptions are returned.
+    ///   - ids: Optional redemption IDs. Twitch currently allows up to 50.
+    ///   - status: Redemption status filter. Required when `ids` is empty.
+    ///   - sort: Optional sort order (`OLDEST` or `NEWEST`).
+    ///   - pageSize: Optional page size. Twitch currently allows up to 50 for redemptions.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Custom Reward Redemption](https://dev.twitch.tv/docs/api/reference/#get-custom-reward-redemption)
+    public func customRewardRedemptions(
+        broadcasterID: String,
+        rewardID: String,
+        ids: [String] = [],
+        status: ChannelPointsRedemptionStatus? = nil,
+        sort: String? = nil,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<CustomRewardRedemption> {
+        HelixPagedSequence { cursor in
+            try await fetchCustomRewardRedemptionsPage(
+                broadcasterID: broadcasterID,
+                rewardID: rewardID,
+                ids: ids,
+                status: status,
+                sort: sort,
+                first: pageSize,
+                after: cursor
+            )
+        }
+    }
+
     public func updateCustomRewardRedemptionStatus(
         broadcasterID: String,
         rewardID: String,
         redemptionIDs: [String],
         status: ChannelPointsRedemptionStatus
     ) async throws -> [CustomRewardRedemption] {
+        guard !redemptionIDs.isEmpty else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "At least one redemption ID is required")
+            )
+        }
+        guard redemptionIDs.count <= 50 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 50 redemption IDs")
+            )
+        }
+
         var queryItems = [
             URLQueryItem(name: "broadcaster_id", value: broadcasterID),
             URLQueryItem(name: "reward_id", value: rewardID)

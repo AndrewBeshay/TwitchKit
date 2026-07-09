@@ -24,7 +24,7 @@ extension HelixClient {
         queryItems += HelixQuery.items("id", values: segmentIDs)
         HelixQuery.append(startTime.map { URLQueryItem(name: "start_time", value: TwitchDateParser.string(from: $0)) }, to: &queryItems)
         HelixQuery.append(HelixQuery.item("utc_offset", utcOffset), to: &queryItems)
-        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor, validRange: 1...25)
 
         let data = try await requestRawData(
             endpoint: "schedule",
