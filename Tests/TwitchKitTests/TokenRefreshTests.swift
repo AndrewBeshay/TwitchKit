@@ -142,6 +142,86 @@ final class TokenRefreshTests: XCTestCase {
         let accessToken = try await provider.accessToken()
         XCTAssertEqual(accessToken, "new")
     }
+
+    func test_setTokenStampsObtainedAt() async throws {
+        let store = InMemoryTokenStore()
+        let provider = makeProvider(store: store, httpClient: MockHTTPClient(responses: []))
+
+        let before = Date.now
+        try await provider.setToken(OAuthToken(accessToken: "access", refreshToken: "r1", expiresIn: 3600))
+        let after = Date.now
+
+        let storedToken = try await store.loadToken()
+        let obtainedAt = try XCTUnwrap(storedToken?.obtainedAt)
+        XCTAssertGreaterThanOrEqual(obtainedAt, before)
+        XCTAssertLessThanOrEqual(obtainedAt, after)
+
+        // A caller-provided timestamp must be preserved, not overwritten.
+        let explicitDate = Date.now.addingTimeInterval(-1_000)
+        try await provider.setToken(OAuthToken(accessToken: "access", obtainedAt: explicitDate))
+        let secondToken = try await store.loadToken()
+        XCTAssertEqual(secondToken?.obtainedAt, explicitDate)
+    }
+
+    func test_accessTokenProactivelyRefreshesExpiredToken() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: Self.refreshedTokenJSON)
+        ])
+        let store = InMemoryTokenStore(token: OAuthToken(
+            accessToken: "old",
+            refreshToken: "r1",
+            expiresIn: 30,
+            obtainedAt: Date.now.addingTimeInterval(-3_600)
+        ))
+        let provider = makeProvider(store: store, httpClient: transport)
+
+        let accessToken = try await provider.accessToken()
+
+        XCTAssertEqual(accessToken, "new")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+        let storedToken = try await store.loadToken()
+        XCTAssertEqual(storedToken?.accessToken, "new")
+        XCTAssertEqual(storedToken?.refreshToken, "r2")
+        // The refreshed token came off the wire without obtained_at — the
+        // provider must stamp it so the next expiry check works.
+        XCTAssertNotNil(storedToken?.obtainedAt)
+    }
+
+    func test_accessTokenDoesNotRefreshFreshToken() async throws {
+        let transport = MockHTTPClient(responses: [])
+        let store = InMemoryTokenStore(token: OAuthToken(
+            accessToken: "current",
+            refreshToken: "r1",
+            expiresIn: 3600,
+            obtainedAt: .now
+        ))
+        let provider = makeProvider(store: store, httpClient: transport)
+
+        let accessToken = try await provider.accessToken()
+
+        XCTAssertEqual(accessToken, "current")
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test_accessTokenReturnsExpiredTokenWithoutRefreshToken() async throws {
+        // No refresh token means nothing proactive can be done — return the
+        // stale token unchanged and let the downstream 401 surface.
+        let transport = MockHTTPClient(responses: [])
+        let store = InMemoryTokenStore(token: OAuthToken(
+            accessToken: "stale",
+            expiresIn: 30,
+            obtainedAt: Date.now.addingTimeInterval(-3_600)
+        ))
+        let provider = makeProvider(store: store, httpClient: transport)
+
+        let accessToken = try await provider.accessToken()
+
+        XCTAssertEqual(accessToken, "stale")
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
 }
 
 /// Serves the token response only after `release()` is called, so a test can

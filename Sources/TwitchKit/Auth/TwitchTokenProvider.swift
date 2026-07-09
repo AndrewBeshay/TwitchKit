@@ -39,11 +39,48 @@ public actor TwitchTokenProvider: TwitchAccessTokenProvider {
     }
 
     public func accessToken() async throws -> String {
-        try await token().accessToken
+        let token = try await token()
+
+        // Proactive refresh: renew a token that is expired (or expires
+        // within the next minute) before handing it out, instead of letting
+        // the request fail with a 401 first. Without a refresh token the
+        // stale value is returned as-is — the 401 surfaces downstream.
+        guard token.isExpired(within: 60), token.refreshToken != nil else {
+            return token.accessToken
+        }
+
+        do {
+            try await refreshIfNeeded()
+        } catch {
+            // Error rule: a definitive rejection means performRefresh()
+            // already logged out — the session is dead and the stale access
+            // token is unusable, so propagate. Anything transient (network
+            // failure, token-endpoint 5xx, cancellation) left the stored
+            // token intact: swallow it and return the possibly stale access
+            // token — Helix's reactive 401-retry remains the safety net.
+            if Self.isDefinitiveRefreshRejection(error) {
+                throw error
+            }
+            return token.accessToken
+        }
+        return try await self.token().accessToken
     }
 
-    /// Stores an externally obtained token.
+    /// Stores an externally obtained token, stamping `obtainedAt` with the
+    /// current time when the caller didn't provide one so expiry can be
+    /// computed later.
     public func setToken(_ token: OAuthToken) async throws {
+        var token = token
+        if token.obtainedAt == nil {
+            token = OAuthToken(
+                accessToken: token.accessToken,
+                refreshToken: token.refreshToken,
+                expiresIn: token.expiresIn,
+                scope: token.scope,
+                tokenType: token.tokenType,
+                obtainedAt: .now
+            )
+        }
         cachedToken = token
         hasLoadedStoredToken = true
         try await tokenStore.saveToken(token)
