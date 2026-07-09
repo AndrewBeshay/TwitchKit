@@ -155,6 +155,9 @@ for await event in twitch.eventSub.events {
 
     case .unknown(let type, _):
         print("Unhandled EventSub event:", type)
+
+    default:
+        break // dozens of other typed events — see EventSubEvent
     }
 }
 ```
