@@ -78,6 +78,24 @@ extension HelixClient {
         return response.page
     }
 
+    /// Returns an async sequence of banned or timed-out users.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - userIDs: Optional user IDs used to check specific bans.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Banned Users](https://dev.twitch.tv/docs/api/reference/#get-banned-users)
+    public func bannedUsers(
+        broadcasterID: String,
+        userIDs: [String] = [],
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<BannedUser> {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterID)]
+        queryItems += HelixQuery.items("user_id", values: userIDs)
+        return pagedRequest(endpoint: "moderation/banned", queryItems: queryItems, pageSize: pageSize)
+    }
+
     /// Bans a user or puts them in a timeout.
     public func banUser(
         broadcasterID: String,
@@ -140,6 +158,32 @@ extension HelixClient {
         return response.page
     }
 
+    /// Returns an async sequence of unban requests.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - moderatorID: The moderator's user ID (or the broadcaster's own ID).
+    ///   - status: The unban request status to filter by.
+    ///   - userID: Optional user ID used to return that user's requests.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Unban Requests](https://dev.twitch.tv/docs/api/reference/#get-unban-requests)
+    public func unbanRequests(
+        broadcasterID: String,
+        moderatorID: String,
+        status: UnbanRequestStatusFilter,
+        userID: String? = nil,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<UnbanRequest> {
+        var queryItems = [
+            URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+            URLQueryItem(name: "moderator_id", value: moderatorID),
+            URLQueryItem(name: "status", value: status.rawValue),
+        ]
+        HelixQuery.append(HelixQuery.item("user_id", userID), to: &queryItems)
+        return pagedRequest(endpoint: "moderation/unban_requests", queryItems: queryItems, pageSize: pageSize)
+    }
+
     /// Resolves an unban request.
     public func resolveUnbanRequest(
         broadcasterID: String,
@@ -178,6 +222,29 @@ extension HelixClient {
             queryItems: queryItems
         )
         return response.page
+    }
+
+    /// Returns an async sequence of blocked terms.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - moderatorID: The moderator's user ID (or the broadcaster's own ID).
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Blocked Terms](https://dev.twitch.tv/docs/api/reference/#get-blocked-terms)
+    public func blockedTerms(
+        broadcasterID: String,
+        moderatorID: String,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<BlockedTerm> {
+        pagedRequest(
+            endpoint: "moderation/blocked_terms",
+            queryItems: [
+                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
+                URLQueryItem(name: "moderator_id", value: moderatorID),
+            ],
+            pageSize: pageSize
+        )
     }
 
     /// Adds a blocked term.
@@ -233,6 +300,24 @@ extension HelixClient {
         return response.page
     }
 
+    /// Returns an async sequence of channels moderated by a user.
+    ///
+    /// - Parameters:
+    ///   - userID: The user whose moderated channels are returned.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Moderated Channels](https://dev.twitch.tv/docs/api/reference/#get-moderated-channels)
+    public func moderatedChannels(
+        userID: String,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<ModeratedChannel> {
+        pagedRequest(
+            endpoint: "moderation/channels",
+            queryItems: [URLQueryItem(name: "user_id", value: userID)],
+            pageSize: pageSize
+        )
+    }
+
     /// Gets one page of moderators for a broadcaster.
     public func fetchModeratorsPage(
         broadcasterID: String,
@@ -245,6 +330,24 @@ extension HelixClient {
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
         let response: HelixResponse<ModeratorUser> = try await request(endpoint: "moderation/moderators", queryItems: queryItems)
         return response.page
+    }
+
+    /// Returns an async sequence of moderators for a broadcaster.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - userIDs: Optional user IDs used to check specific moderators.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Moderators](https://dev.twitch.tv/docs/api/reference/#get-moderators)
+    public func moderators(
+        broadcasterID: String,
+        userIDs: [String] = [],
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<ModeratorUser> {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterID)]
+        queryItems += HelixQuery.items("user_id", values: userIDs)
+        return pagedRequest(endpoint: "moderation/moderators", queryItems: queryItems, pageSize: pageSize)
     }
 
     /// Adds a channel moderator.
@@ -283,6 +386,24 @@ extension HelixClient {
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
         let response: HelixResponse<VIPUser> = try await request(endpoint: "channels/vips", queryItems: queryItems)
         return response.page
+    }
+
+    /// Returns an async sequence of VIPs for a broadcaster.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - userIDs: Optional user IDs used to check specific VIPs.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get VIPs](https://dev.twitch.tv/docs/api/reference/#get-vips)
+    public func vips(
+        broadcasterID: String,
+        userIDs: [String] = [],
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<VIPUser> {
+        var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterID)]
+        queryItems += HelixQuery.items("user_id", values: userIDs)
+        return pagedRequest(endpoint: "channels/vips", queryItems: queryItems, pageSize: pageSize)
     }
 
     /// Adds a channel VIP.
@@ -604,7 +725,29 @@ public struct ShieldModeStatus: Decodable, Sendable, Equatable {
     public let moderatorId: String
     public let moderatorName: String
     public let moderatorLogin: String
-    public let lastActivatedAt: Date
+
+    /// When Shield Mode was last activated, or `nil` if the broadcaster has
+    /// never activated it.
+    public let lastActivatedAt: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case isActive, moderatorId, moderatorName, moderatorLogin, lastActivatedAt
+    }
+
+    /// Custom decoding solely for `lastActivatedAt`: Twitch sends
+    /// `"last_activated_at": ""` — an empty string, not null — when Shield
+    /// Mode has never been activated. The key is present, so `Date?` + the
+    /// date strategy would try to parse "" and throw. Decode the raw string
+    /// and map non-parsing values (incl. empty) to nil instead.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isActive = try container.decode(Bool.self, forKey: .isActive)
+        moderatorId = try container.decode(String.self, forKey: .moderatorId)
+        moderatorName = try container.decode(String.self, forKey: .moderatorName)
+        moderatorLogin = try container.decode(String.self, forKey: .moderatorLogin)
+        let rawLastActivatedAt = try container.decodeIfPresent(String.self, forKey: .lastActivatedAt)
+        lastActivatedAt = rawLastActivatedAt.flatMap(TwitchDateParser.date(from:))
+    }
 }
 
 /// A warning applied to a chat user.

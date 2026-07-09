@@ -101,6 +101,24 @@ extension HelixClient {
         return response.page
     }
 
+    /// Returns an async sequence of extension Bits transactions.
+    ///
+    /// - Parameters:
+    ///   - extensionID: The extension whose transactions are returned.
+    ///   - ids: Optional transaction IDs. Twitch currently allows up to 100.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Extension Transactions](https://dev.twitch.tv/docs/api/reference/#get-extension-transactions)
+    public func extensionTransactions(
+        extensionID: String,
+        ids: [String] = [],
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<ExtensionTransaction> {
+        var queryItems = [URLQueryItem(name: "extension_id", value: extensionID)]
+        queryItems += HelixQuery.items("id", values: ids)
+        return pagedRequest(endpoint: "extensions/transactions", queryItems: queryItems, pageSize: pageSize)
+    }
+
 }
 
 public enum AnalyticsReportType: String, Sendable, Equatable {

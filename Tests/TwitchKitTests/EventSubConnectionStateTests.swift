@@ -4,10 +4,10 @@ import Foundation
 
 /// Tests that network-path transitions drive the public `connectionState` stream.
 ///
-/// There is no socket seam in `EventSubClient`, so these tests exercise the
-/// network-transition *logic* deterministically via a scripted path monitor and
-/// stop at `.reconnecting` — the first post-restore emission, which is the
-/// behavior this feature owns.
+/// These tests exercise the network-transition *logic* deterministically via a
+/// scripted path monitor — no socket at all, not even a fake one (socket-driven
+/// behavior lives in EventSubSocketTests) — and stop at `.reconnecting`, the
+/// first post-restore emission, which is the behavior this feature owns.
 final class EventSubConnectionStateTests: XCTestCase {
 
     func test_pathTransitionsDriveConnectionStateSequence() async throws {

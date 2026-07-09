@@ -11,14 +11,23 @@ final class ReconnectDecisionTests: XCTestCase {
         let decision = reconnectDecision(
             networkAvailable: false, shouldReconnect: true, isLive: true, attempt: 1
         )
-        XCTAssertEqual(decision.action, .park)
+        XCTAssertEqual(decision.action, .park(.networkUnavailable))
     }
 
     func test_notWantingToReconnectParks() {
         let decision = reconnectDecision(
             networkAvailable: true, shouldReconnect: false, isLive: true, attempt: 1
         )
-        XCTAssertEqual(decision.action, .park)
+        XCTAssertEqual(decision.action, .park(.stopRequested))
+    }
+
+    /// When both gates would park, "we don't want to reconnect" wins — a
+    /// deliberate stop must never be reported as a transient network problem.
+    func test_stopRequestedTakesPrecedenceOverNetworkUnavailable() {
+        let decision = reconnectDecision(
+            networkAvailable: false, shouldReconnect: false, isLive: true, attempt: 1
+        )
+        XCTAssertEqual(decision.action, .park(.stopRequested))
     }
 
     func test_liveUsesHalfSecondBaseDelay() {
@@ -65,9 +74,11 @@ final class ReconnectDecisionTests: XCTestCase {
 
     func test_notLiveGivesUpAfterFiveAttempts() {
         // maxAttempts == 5 for a non-live channel, so attempt 6 onward parks (gives up).
+        // The reason matters: `.attemptsExhausted` is what makes EventSubClient
+        // emit the terminal `.disconnected` instead of parking silently.
         XCTAssertEqual(
             reconnectDecision(networkAvailable: true, shouldReconnect: true, isLive: false, attempt: 6).action,
-            .park
+            .park(.attemptsExhausted)
         )
     }
 }

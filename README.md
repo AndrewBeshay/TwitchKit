@@ -155,6 +155,9 @@ for await event in twitch.eventSub.events {
 
     case .unknown(let type, _):
         print("Unhandled EventSub event:", type)
+
+    default:
+        break // dozens of other typed events — see EventSubEvent
     }
 }
 ```
@@ -244,7 +247,7 @@ let challenge = try EventSubWebhookVerifier.challenge(from: requestBody)
 | Users | Authenticated user, users by ID/login |
 | Channels | Channel info, channel updates, followers, followed channels, editors, content classification labels |
 | Streams and games | Streams, stream lookup, stream key, top games, games by ID/name/IGDB ID |
-| Chat | Global/channel badges, global/channel emotes, emote sets, user emotes, chatters, chat settings, shared chat sessions, announcements, shoutouts, pinned messages, user chat colors, Send Chat Message |
+| Chat | Global/channel badges, global/channel emotes, emote sets, user emotes, chatters, chat settings, shared chat sessions, announcements, shoutouts, user chat colors, Send Chat Message |
 | Moderation | AutoMod status/settings, bans/timeouts, unban requests, blocked terms, delete chat message, moderated channels, moderators, VIPs, Shield Mode, warnings, suspicious users |
 | EventSub management | Create/list/delete subscriptions, bulk cleanup helper, WebSocket/webhook/conduit transports, batching flag |
 | Creator tools | Schedules, charity campaigns/donations, Hype Train status, polls, predictions, raids, stream markers, goals |

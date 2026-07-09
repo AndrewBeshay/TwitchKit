@@ -2,6 +2,9 @@ import Foundation
 
 extension HelixClient {
     /// Gets one page of users connected to a broadcaster's chat.
+    ///
+    /// Get Chatters accepts a larger page size than most Helix endpoints:
+    /// `first` may be between 1 and 1,000.
     public func fetchChattersPage(
         broadcasterID: String,
         moderatorID: String,
@@ -12,7 +15,7 @@ extension HelixClient {
             URLQueryItem(name: "broadcaster_id", value: broadcasterID),
             URLQueryItem(name: "moderator_id", value: moderatorID),
         ]
-        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
+        try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor, validRange: 1...1000)
 
         let response: HelixResponse<TwitchChatter> = try await request(
             endpoint: "chat/chatters",
@@ -22,25 +25,33 @@ extension HelixClient {
     }
 
     /// Returns an async sequence of users connected to a broadcaster's chat.
+    ///
+    /// Get Chatters accepts a larger page size than most Helix endpoints:
+    /// `pageSize` may be between 1 and 1,000.
     public func chatters(
         broadcasterID: String,
         moderatorID: String,
         pageSize: Int? = nil
     ) -> HelixPagedSequence<TwitchChatter> {
-        pagedRequest(
-            endpoint: "chat/chatters",
-            queryItems: [
-                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-                URLQueryItem(name: "moderator_id", value: moderatorID),
-            ],
-            pageSize: pageSize
-        )
+        HelixPagedSequence { cursor in
+            try await fetchChattersPage(
+                broadcasterID: broadcasterID,
+                moderatorID: moderatorID,
+                first: pageSize,
+                after: cursor
+            )
+        }
     }
 
     /// Gets emotes for one or more emote set IDs.
     public func fetchEmoteSets(ids: [String]) async throws -> [TwitchEmote] {
         guard !ids.isEmpty else {
             throw HelixError.badRequest(TwitchAPIError.fallback(status: 400, message: "At least one emote set ID is required"))
+        }
+        guard ids.count <= 25 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 25 emote set IDs")
+            )
         }
 
         let response: HelixResponse<TwitchEmote> = try await request(
@@ -62,6 +73,25 @@ extension HelixClient {
 
         let response: HelixResponse<TwitchEmote> = try await request(endpoint: "chat/emotes/user", queryItems: queryItems)
         return response.page
+    }
+
+    /// Returns an async sequence of emotes available to a user.
+    ///
+    /// Get User Emotes does not support a `first` page-size parameter,
+    /// so this sequence has no `pageSize` argument.
+    ///
+    /// - Parameters:
+    ///   - userID: The user's ID.
+    ///   - broadcasterID: Optional broadcaster ID to also include follower/subscriber emotes for that channel.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get User Emotes](https://dev.twitch.tv/docs/api/reference/#get-user-emotes)
+    public func userEmotes(
+        userID: String,
+        broadcasterID: String? = nil
+    ) -> HelixPagedSequence<TwitchEmote> {
+        HelixPagedSequence { cursor in
+            try await fetchUserEmotesPage(userID: userID, broadcasterID: broadcasterID, after: cursor)
+        }
     }
 
     /// Gets a broadcaster's chat settings.
@@ -140,67 +170,15 @@ extension HelixClient {
         )
     }
 
-    /// Gets the currently pinned chat message for a broadcaster.
-    public func fetchPinnedChatMessage(broadcasterID: String, moderatorID: String) async throws -> PinnedChatMessage? {
-        let response: HelixResponse<PinnedChatMessage> = try await request(
-            endpoint: "chat/pins",
-            queryItems: [
-                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-                URLQueryItem(name: "moderator_id", value: moderatorID),
-            ]
-        )
-        return response.data.first
-    }
-
-    /// Pins a chat message.
-    public func pinChatMessage(
-        broadcasterID: String,
-        moderatorID: String,
-        messageID: String,
-        durationSeconds: Int? = nil
-    ) async throws {
-        var queryItems = [
-            URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-            URLQueryItem(name: "moderator_id", value: moderatorID),
-            URLQueryItem(name: "message_id", value: messageID),
-        ]
-        HelixQuery.append(HelixQuery.item("duration_seconds", durationSeconds.map(String.init)), to: &queryItems)
-        try await requestNoContent(endpoint: "chat/pins", method: "PUT", queryItems: queryItems)
-    }
-
-    /// Updates the duration of a pinned chat message.
-    public func updatePinnedChatMessage(
-        broadcasterID: String,
-        moderatorID: String,
-        messageID: String,
-        durationSeconds: Int? = nil
-    ) async throws {
-        var queryItems = [
-            URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-            URLQueryItem(name: "moderator_id", value: moderatorID),
-            URLQueryItem(name: "message_id", value: messageID),
-        ]
-        HelixQuery.append(HelixQuery.item("duration_seconds", durationSeconds.map(String.init)), to: &queryItems)
-        try await requestNoContent(endpoint: "chat/pins", method: "PATCH", queryItems: queryItems)
-    }
-
-    /// Unpins a chat message.
-    public func unpinChatMessage(broadcasterID: String, moderatorID: String, messageID: String) async throws {
-        try await requestNoContent(
-            endpoint: "chat/pins",
-            method: "DELETE",
-            queryItems: [
-                URLQueryItem(name: "broadcaster_id", value: broadcasterID),
-                URLQueryItem(name: "moderator_id", value: moderatorID),
-                URLQueryItem(name: "message_id", value: messageID),
-            ]
-        )
-    }
-
     /// Gets chat colors for one or more users.
     public func fetchUserChatColors(userIDs: [String]) async throws -> [UserChatColor] {
         guard !userIDs.isEmpty else {
             throw HelixError.badRequest(TwitchAPIError.fallback(status: 400, message: "At least one user ID is required"))
+        }
+        guard userIDs.count <= 100 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 100 user IDs")
+            )
         }
         let response: HelixResponse<UserChatColor> = try await request(
             endpoint: "chat/color",
@@ -303,22 +281,6 @@ public struct SharedChatSession: Decodable, Sendable, Equatable {
     public struct Participant: Decodable, Sendable, Equatable {
         public let broadcasterId: String
     }
-}
-
-/// A pinned chat message.
-public struct PinnedChatMessage: Decodable, Sendable, Equatable {
-    public let messageId: String
-    public let broadcasterId: String
-    public let senderUserId: String
-    public let senderUserLogin: String
-    public let senderUserName: String
-    public let pinnedByUserId: String
-    public let pinnedByUserLogin: String
-    public let pinnedByUserName: String
-    public let message: ChatMessage.ChatMessageBody
-    public let startsAt: Date
-    public let endsAt: Date?
-    public let updatedAt: Date
 }
 
 /// The chat color for a user.

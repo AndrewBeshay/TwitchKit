@@ -308,8 +308,7 @@ final class HTTPClientTests: XCTestCase {
             senderId: "sender-id",
             message: "Hello from TwitchKit",
             replyParentMessageId: "parent-message-id",
-            forSourceOnly: true,
-            pin: true
+            forSourceOnly: true
         )
 
         XCTAssertEqual(result.messageId, "message-1")
@@ -328,7 +327,7 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(object["message"] as? String, "Hello from TwitchKit")
         XCTAssertEqual(object["reply_parent_message_id"] as? String, "parent-message-id")
         XCTAssertEqual(object["for_source_only"] as? Bool, true)
-        XCTAssertEqual(object["pin"] as? Bool, true)
+        XCTAssertNil(object["pin"])
     }
 
     func test_sendChatMessageReturnsDropReasonWhenMessageIsNotSent() async throws {
@@ -1136,8 +1135,14 @@ final class HTTPClientTests: XCTestCase {
     }
 
     func test_deleteAllEventSubSubscriptionsDeletesMatchingPagedResults() async throws {
+        // Two pages exist on the server. Deleting shifts the remaining items forward, so the
+        // client must re-fetch a fresh first page after each round instead of following the
+        // pre-deletion cursor: subscription-3 appears on the next first-page fetch.
         let transport = MockHTTPClient(responses: [
-            .json(statusCode: 200, body: #"{"data":[{"id":"subscription-1","status":"enabled","type":"stream.online","version":"1","condition":{"broadcaster_user_id":"1234"},"transport":{"method":"websocket","session_id":"session-id"},"created_at":"2024-01-01T00:00:00Z","cost":1}],"pagination":{"cursor":"next"}}"#),
+            .json(statusCode: 200, body: #"{"data":[{"id":"subscription-1","status":"enabled","type":"stream.online","version":"1","condition":{"broadcaster_user_id":"1234"},"transport":{"method":"websocket","session_id":"session-id"},"created_at":"2024-01-01T00:00:00Z","cost":1},{"id":"subscription-2","status":"enabled","type":"stream.offline","version":"1","condition":{"broadcaster_user_id":"1234"},"transport":{"method":"websocket","session_id":"session-id"},"created_at":"2024-01-01T00:00:00Z","cost":1}],"pagination":{"cursor":"stale-cursor"}}"#),
+            .json(statusCode: 204, body: ""),
+            .json(statusCode: 204, body: ""),
+            .json(statusCode: 200, body: #"{"data":[{"id":"subscription-3","status":"enabled","type":"channel.follow","version":"2","condition":{"broadcaster_user_id":"1234"},"transport":{"method":"websocket","session_id":"session-id"},"created_at":"2024-01-01T00:00:00Z","cost":1}],"pagination":{}}"#),
             .json(statusCode: 204, body: ""),
             .json(statusCode: 200, body: #"{"data":[],"pagination":{}}"#)
         ])
@@ -1147,15 +1152,18 @@ final class HTTPClientTests: XCTestCase {
 
         let deletedCount = try await api.deleteAllEventSubSubscriptions(filter: .status(.enabled))
 
-        XCTAssertEqual(deletedCount, 1)
+        XCTAssertEqual(deletedCount, 3)
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "DELETE", "GET"])
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "DELETE", "DELETE", "GET", "DELETE", "GET"])
         XCTAssertEqual(
             requests.map { $0.url?.absoluteString },
             [
                 "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled",
                 "https://api.twitch.tv/helix/eventsub/subscriptions?id=subscription-1",
-                "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled&after=next"
+                "https://api.twitch.tv/helix/eventsub/subscriptions?id=subscription-2",
+                "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled",
+                "https://api.twitch.tv/helix/eventsub/subscriptions?id=subscription-3",
+                "https://api.twitch.tv/helix/eventsub/subscriptions?status=enabled"
             ]
         )
     }
@@ -1300,6 +1308,194 @@ final class HTTPClientTests: XCTestCase {
         )
     }
 
+    func test_moderatorsSequenceFetchesNextPageUsingCursor() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                { "user_id": "1", "user_login": "mod1", "user_name": "Mod1" }
+              ],
+              "pagination": { "cursor": "next-cursor" }
+            }
+            """),
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                { "user_id": "2", "user_login": "mod2", "user_name": "Mod2" }
+              ],
+              "pagination": {}
+            }
+            """),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        var moderators: [String] = []
+        for try await moderator in api.moderators(broadcasterID: "broadcaster-id", pageSize: 1) {
+            moderators.append(moderator.userName)
+        }
+
+        XCTAssertEqual(moderators, ["Mod1", "Mod2"])
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(
+            requests[0].url?.absoluteString,
+            "https://api.twitch.tv/helix/moderation/moderators?broadcaster_id=broadcaster-id&first=1"
+        )
+        XCTAssertEqual(
+            requests[1].url?.absoluteString,
+            "https://api.twitch.tv/helix/moderation/moderators?broadcaster_id=broadcaster-id&first=1&after=next-cursor"
+        )
+    }
+
+    func test_fetchChattersPageAcceptsPageSizeAboveDefaultHelixLimit() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: """
+            {
+              "data": [
+                { "user_id": "1", "user_login": "viewer", "user_name": "Viewer" }
+              ],
+              "pagination": {}
+            }
+            """)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        _ = try await api.fetchChattersPage(broadcasterID: "broadcaster", moderatorID: "moderator", first: 1000)
+
+        let request = try await firstRecordedRequest(from: transport)
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://api.twitch.tv/helix/chat/chatters?broadcaster_id=broadcaster&moderator_id=moderator&first=1000"
+        )
+    }
+
+    func test_fetchChannelStreamSchedulePageRejectsPageSizeOverScheduleLimit() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchChannelStreamSchedulePage(forBroadcasterID: "broadcaster", first: 26)
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Page size must be between 1 and 25")
+        }
+    }
+
+    func test_fetchCustomRewardRedemptionsPageRequiresStatusWhenNoIDsSpecified() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchCustomRewardRedemptionsPage(broadcasterID: "broadcaster", rewardID: "reward")
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "A redemption status is required when no redemption IDs are specified")
+        }
+    }
+
+    func test_fetchEmoteSetsRejectsMoreThanTwentyFiveIDs() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchEmoteSets(ids: (1...26).map(String.init))
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Twitch allows up to 25 emote set IDs")
+        }
+    }
+
+    func test_deleteVideosRejectsEmptyIDs() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.deleteVideos(ids: [])
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "At least one video ID is required")
+        }
+    }
+
+    func test_fetchClipsPageRequiresExactlyOneFilter() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchClipsPage()
+            XCTFail("Expected bad request for zero filters")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Exactly one of broadcaster ID, game ID, or clip IDs must be specified")
+        }
+
+        do {
+            _ = try await api.fetchClipsPage(broadcasterID: "broadcaster", gameID: "game")
+            XCTFail("Expected bad request for multiple filters")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Exactly one of broadcaster ID, game ID, or clip IDs must be specified")
+        }
+    }
+
+    func test_fetchStreamsPageRejectsMoreThanOneHundredUserIDs() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchStreamsPage(userIDs: (1...101).map(String.init))
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Twitch allows up to 100 user IDs")
+        }
+    }
+
+    func test_fetchTeamsRequiresExactlyOneOfNameOrID() async throws {
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: MockHTTPClient(responses: []))
+
+        do {
+            _ = try await api.fetchTeams(name: "team", id: "1")
+            XCTFail("Expected bad request")
+        } catch let error as HelixError {
+            guard case .badRequest(let apiError) = error else {
+                return XCTFail("Expected badRequest, got \(error)")
+            }
+            XCTAssertEqual(apiError.message, "Exactly one of team name or team ID must be specified")
+        }
+    }
+
     func test_groupTwoHelixEndpointsUseExpectedPathsAndQueries() async throws {
         let transport = MockHTTPClient(responses: [
             .json(statusCode: 200, body: #"{"data":[]}"#),
@@ -1422,16 +1618,86 @@ final class HTTPClientTests: XCTestCase {
         )
 
         let requests = await transport.recordedRequests()
-        let scheduleBody = try XCTUnwrap(requests[0].httpBody)
-        let scheduleObject = try XCTUnwrap(JSONSerialization.jsonObject(with: scheduleBody) as? [String: Any])
-        XCTAssertEqual(scheduleObject["is_vacation_enabled"] as? Bool, true)
-        XCTAssertEqual(scheduleObject["timezone"] as? String, "Australia/Sydney")
-        XCTAssertTrue((scheduleObject["vacation_start_time"] as? String)?.contains("T") == true)
+        // Update Channel Stream Schedule takes its settings as query parameters, not a body.
+        let scheduleRequest = requests[0]
+        XCTAssertEqual(scheduleRequest.httpMethod, "PATCH")
+        XCTAssertNil(scheduleRequest.httpBody)
+        let scheduleURL = try XCTUnwrap(scheduleRequest.url)
+        let scheduleComponents = try XCTUnwrap(URLComponents(url: scheduleURL, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(scheduleComponents.path, "/helix/schedule/settings")
+        let scheduleQuery = Dictionary(
+            uniqueKeysWithValues: (scheduleComponents.queryItems ?? []).map { ($0.name, $0.value) }
+        )
+        XCTAssertEqual(scheduleQuery["broadcaster_id"], "broadcaster")
+        XCTAssertEqual(scheduleQuery["is_vacation_enabled"], "true")
+        XCTAssertEqual(scheduleQuery["vacation_start_time"], TwitchDateParser.string(from: date))
+        XCTAssertEqual(scheduleQuery["vacation_end_time"], TwitchDateParser.string(from: date))
+        XCTAssertEqual(scheduleQuery["timezone"], "Australia/Sydney")
 
         let pollBody = try XCTUnwrap(requests[1].httpBody)
         let pollObject = try XCTUnwrap(JSONSerialization.jsonObject(with: pollBody) as? [String: Any])
         XCTAssertEqual(pollObject["broadcaster_id"] as? String, "broadcaster")
         XCTAssertEqual(pollObject["duration"] as? Int, 60)
+    }
+
+    /// Schedule endpoints return `data` as a single OBJECT, not the usual
+    /// Helix `data` array, so they need the dedicated envelope decode path.
+    func test_fetchChannelStreamScheduleDecodesSingleObjectEnvelope() async throws {
+        let scheduleBody = """
+        {
+          "data": {
+            "segments": [
+              {
+                "id": "segment-1",
+                "start_time": "2024-07-01T18:00:00Z",
+                "end_time": "2024-07-01T19:00:00Z",
+                "title": "Weekly stream",
+                "canceled_until": null,
+                "category": { "id": "509670", "name": "Science & Technology" },
+                "is_recurring": true
+              }
+            ],
+            "broadcaster_id": "141981764",
+            "broadcaster_name": "TwitchDev",
+            "broadcaster_login": "twitchdev",
+            "vacation": null
+          },
+          "pagination": { "cursor": "next-cursor" }
+        }
+        """
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: scheduleBody),
+            .json(statusCode: 200, body: scheduleBody),
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchChannelStreamSchedulePage(forBroadcasterID: "141981764")
+
+        XCTAssertEqual(page.schedule.broadcasterId, "141981764")
+        XCTAssertEqual(page.schedule.broadcasterLogin, "twitchdev")
+        XCTAssertEqual(page.schedule.segments.map(\.id), ["segment-1"])
+        XCTAssertEqual(page.schedule.segments.first?.isRecurring, true)
+        XCTAssertNil(page.schedule.vacation)
+        XCTAssertEqual(page.nextCursor, "next-cursor")
+
+        let created = try await api.createChannelStreamScheduleSegment(
+            forBroadcasterID: "141981764",
+            segment: ChannelStreamScheduleSegmentCreate(
+                startTime: Date(timeIntervalSince1970: 1_704_067_200),
+                timezone: "America/New_York",
+                isRecurring: true
+            )
+        )
+        XCTAssertEqual(created.segments.first?.title, "Weekly stream")
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/schedule?broadcaster_id=141981764"
+        )
+        XCTAssertEqual(requests.last?.httpMethod, "POST")
     }
 
     func test_newHelixCoverageUsesExpectedAdsBitsAndDiscoveryEndpoints() async throws {
@@ -1531,6 +1797,162 @@ final class HTTPClientTests: XCTestCase {
         XCTAssertEqual(requests[1].httpMethod, "PATCH")
         XCTAssertEqual(requests[1].url?.absoluteString, "https://api.twitch.tv/helix/guest_star/slot_settings?broadcaster_id=broadcaster&moderator_id=moderator&session_id=session&slot_id=1&is_audio_enabled=true&is_live=false&volume=75")
     }
+
+    // MARK: - Transport errors
+
+    func test_urlErrorSurfacesAsTransportWithOriginalCode() async throws {
+        let transport = MockHTTPClient(responses: [
+            .failure(URLError(.notConnectedToInternet))
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        do {
+            _ = try await api.fetchUser()
+            XCTFail("Expected transport error")
+        } catch let error as HelixError {
+            guard case .transport(let urlError) = error else {
+                return XCTFail("Expected HelixError.transport, got \(error)")
+            }
+            XCTAssertEqual(urlError.code, .notConnectedToInternet)
+        }
+    }
+
+    func test_nonURLTransportErrorStillSurfacesAsNetworkError() async throws {
+        let transport = MockHTTPClient(responses: [
+            .failure(MockTransportError())
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        do {
+            _ = try await api.fetchUser()
+            XCTFail("Expected network error")
+        } catch let error as HelixError {
+            guard case .networkError = error else {
+                return XCTFail("Expected HelixError.networkError, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - Conduit shard updates
+
+    func test_updateConduitShardsSurfacesPerShardErrors() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 202, body: #"{"data":[{"id":"0","status":"enabled","transport":{"method":"webhook","callback":"https://example.com/callback"}}],"errors":[{"id":"1","message":"The shard id is outside the conduit's range","code":"invalid_parameter"}]}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let result = try await api.updateConduitShards(
+            conduitID: "conduit-1",
+            shards: [
+                EventSubConduitShardUpdate(
+                    id: "0",
+                    transport: EventSubConduitShardTransport(
+                        method: .webhook,
+                        callback: URL(string: "https://example.com/callback"),
+                        secret: "s3cre7"
+                    )
+                )
+            ]
+        )
+
+        XCTAssertEqual(result.updated.map(\.id), ["0"])
+        XCTAssertEqual(result.updated.first?.status, "enabled")
+        XCTAssertEqual(
+            result.errors,
+            [
+                ConduitShardUpdateError(
+                    id: "1",
+                    message: "The shard id is outside the conduit's range",
+                    code: "invalid_parameter"
+                )
+            ]
+        )
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.first?.httpMethod, "PATCH")
+        XCTAssertEqual(requests.first?.url?.absoluteString, "https://api.twitch.tv/helix/eventsub/conduits/shards")
+    }
+
+    func test_updateConduitShardsDefaultsToNoErrorsWhenErrorsKeyIsAbsent() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 202, body: #"{"data":[{"id":"0","status":"enabled","transport":{"method":"websocket","session_id":"session-id"}}]}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let result = try await api.updateConduitShards(
+            conduitID: "conduit-1",
+            shards: [
+                EventSubConduitShardUpdate(
+                    id: "0",
+                    transport: EventSubConduitShardTransport(method: .websocket, sessionID: "session-id")
+                )
+            ]
+        )
+
+        XCTAssertEqual(result.updated.map(\.id), ["0"])
+        XCTAssertTrue(result.errors.isEmpty)
+    }
+
+    // MARK: - Extension live channels pagination
+
+    func test_fetchExtensionLiveChannelsPageDecodesStringPaginationCursor() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[{"broadcaster_id":"1","broadcaster_name":"TwitchDev","game_name":"Just Chatting","game_id":"509658","title":"Building TwitchKit"}],"pagination":"cursor-value"}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchExtensionLiveChannelsPage(extensionID: "ext", first: 2)
+
+        XCTAssertEqual(page.data.map(\.broadcasterName), ["TwitchDev"])
+        XCTAssertEqual(page.pagination?.cursor, "cursor-value")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/extensions/live?extension_id=ext&first=2"
+        )
+    }
+
+    func test_fetchExtensionLiveChannelsPageTreatsEmptyStringPaginationAsEnd() async throws {
+        let transport = MockHTTPClient(responses: [
+            .json(statusCode: 200, body: #"{"data":[{"broadcaster_id":"1","broadcaster_name":"TwitchDev","game_name":"Just Chatting","game_id":"509658","title":"Building TwitchKit"}],"pagination":""}"#)
+        ])
+        let auth = makeAuth()
+        try await auth.setToken(OAuthToken(accessToken: "access-token"))
+        let api = HelixClient(auth: auth, clientId: "client-id", httpClient: transport)
+
+        let page = try await api.fetchExtensionLiveChannelsPage(extensionID: "ext", after: "cursor-value")
+
+        XCTAssertEqual(page.data.map(\.broadcasterId), ["1"])
+        XCTAssertNil(page.pagination)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.first?.url?.absoluteString,
+            "https://api.twitch.tv/helix/extensions/live?extension_id=ext&after=cursor-value"
+        )
+    }
+
+    func test_extensionLiveChannelsPageStillDecodesObjectAndAbsentPagination() throws {
+        let objectForm = Data(#"{"data":[],"pagination":{"cursor":"object-cursor"}}"#.utf8)
+        let objectPage = try JSONDecoder.twitch().decode(ExtensionLiveChannelsPage.self, from: objectForm)
+        XCTAssertEqual(objectPage.pagination?.cursor, "object-cursor")
+
+        let absentForm = Data(#"{"data":[]}"#.utf8)
+        let absentPage = try JSONDecoder.twitch().decode(ExtensionLiveChannelsPage.self, from: absentForm)
+        XCTAssertNil(absentPage.pagination)
+
+        let nullForm = Data(#"{"data":[],"pagination":null}"#.utf8)
+        let nullPage = try JSONDecoder.twitch().decode(ExtensionLiveChannelsPage.self, from: nullForm)
+        XCTAssertNil(nullPage.pagination)
+    }
 }
 
 actor MockHTTPClient: HTTPClient {
@@ -1538,6 +1960,7 @@ actor MockHTTPClient: HTTPClient {
         case json(statusCode: Int, body: String, headers: [String: String] = [:])
         case nonHTTP(body: Data)
         case cancellation
+        case failure(any Error & Sendable)
     }
 
     private var responses: [Response]
@@ -1572,9 +1995,14 @@ actor MockHTTPClient: HTTPClient {
 
         case .cancellation:
             throw CancellationError()
+
+        case .failure(let error):
+            throw error
         }
     }
 }
+
+private struct MockTransportError: Error, Sendable {}
 
 actor MetadataRecorder {
     private var metadata: [HelixResponseMetadata] = []

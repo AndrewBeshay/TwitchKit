@@ -101,18 +101,44 @@ public struct OAuthToken: Codable, Sendable, Equatable {
     public let scope: [String]?
     public let tokenType: String?
 
+    /// When the token was obtained, stamped locally by TwitchKit when the
+    /// token is stored. Twitch's OAuth responses carry no such field, so a
+    /// token decoded straight from a token endpoint has `nil` here.
+    public let obtainedAt: Date?
+
     public init(
         accessToken: String,
         refreshToken: String? = nil,
         expiresIn: Int? = nil,
         scope: [String]? = nil,
-        tokenType: String? = nil
+        tokenType: String? = nil,
+        obtainedAt: Date? = nil
     ) {
         self.accessToken = accessToken
         self.refreshToken = refreshToken
         self.expiresIn = expiresIn
         self.scope = scope
         self.tokenType = tokenType
+        self.obtainedAt = obtainedAt
+    }
+
+    /// When the token expires (`obtainedAt` plus `expiresIn`), or `nil` when
+    /// either value is unknown.
+    public var expiresAt: Date? {
+        guard let obtainedAt, let expiresIn else {
+            return nil
+        }
+        return obtainedAt.addingTimeInterval(TimeInterval(expiresIn))
+    }
+
+    /// Returns whether the token is expired — or will be within `tolerance`
+    /// seconds — as of `date`. Returns `false` when the expiry is unknown:
+    /// a token without expiry information must not be blocked from use.
+    public func isExpired(within tolerance: TimeInterval = 0, at date: Date = .now) -> Bool {
+        guard let expiresAt else {
+            return false
+        }
+        return date.addingTimeInterval(tolerance) >= expiresAt
     }
 }
 

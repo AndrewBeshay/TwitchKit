@@ -7,12 +7,36 @@ extension HelixClient {
         first: Int? = nil,
         after cursor: String? = nil
     ) async throws -> HelixPage<TwitchPoll> {
+        guard ids.count <= 20 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 20 poll IDs")
+            )
+        }
+
         var queryItems = [URLQueryItem(name: "broadcaster_id", value: broadcasterID)]
         queryItems += HelixQuery.items("id", values: ids)
         try HelixQuery.appendPagination(to: &queryItems, first: first, after: cursor)
 
         let response: HelixResponse<TwitchPoll> = try await request(endpoint: "polls", queryItems: queryItems)
         return response.page
+    }
+
+    /// Returns an async sequence of polls for a broadcaster.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - ids: Optional poll IDs. Twitch currently allows up to 20.
+    ///   - pageSize: Optional page size.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Polls](https://dev.twitch.tv/docs/api/reference/#get-polls)
+    public func polls(
+        broadcasterID: String,
+        ids: [String] = [],
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<TwitchPoll> {
+        HelixPagedSequence { cursor in
+            try await fetchPollsPage(broadcasterID: broadcasterID, ids: ids, first: pageSize, after: cursor)
+        }
     }
 
     public func createPoll(_ poll: PollCreateRequest) async throws -> TwitchPoll {
@@ -47,6 +71,24 @@ extension HelixClient {
 
         let response: HelixResponse<TwitchPrediction> = try await request(endpoint: "predictions", queryItems: queryItems)
         return response.page
+    }
+
+    /// Returns an async sequence of predictions for a broadcaster.
+    ///
+    /// - Parameters:
+    ///   - broadcasterID: The broadcaster's user ID.
+    ///   - ids: Optional prediction IDs.
+    ///   - pageSize: Optional page size.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Predictions](https://dev.twitch.tv/docs/api/reference/#get-predictions)
+    public func predictions(
+        broadcasterID: String,
+        ids: [String] = [],
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<TwitchPrediction> {
+        HelixPagedSequence { cursor in
+            try await fetchPredictionsPage(broadcasterID: broadcasterID, ids: ids, first: pageSize, after: cursor)
+        }
     }
 
     public func createPrediction(_ prediction: PredictionCreateRequest) async throws -> TwitchPrediction {

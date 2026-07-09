@@ -3,6 +3,26 @@ import os
 
 private let logger = Logger(subsystem: "com.twitchkit", category: "eventsub")
 
+/// Minimal seam over `URLSessionWebSocketTask` — just the three members
+/// ``EventSubClient`` actually uses — so tests can drive the client with a
+/// scripted fake socket instead of the network.
+///
+/// `AnyObject` is required, not stylistic: the client compares sockets by
+/// identity (`===`) to reject stale callbacks from superseded connections,
+/// and keys its receive loops by `ObjectIdentifier`. Value-typed conformers
+/// would silently break both.
+public protocol EventSubWebSocket: AnyObject, Sendable {
+    func resume()
+    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?)
+    func receive() async throws -> URLSessionWebSocketTask.Message
+}
+
+// Same-module conformance of the real socket type to our own protocol.
+// `resume()` is inherited from `URLSessionTask`; `cancel(with:reason:)` and
+// the async `receive()` are `URLSessionWebSocketTask`'s own API — all three
+// match the protocol requirements exactly, so the extension body is empty.
+extension URLSessionWebSocketTask: EventSubWebSocket {}
+
 public actor EventSubClient {
     /// Stream of parsed events — initialized once, consumers iterate without actor hop.
     public nonisolated let events: AsyncStream<EventSubEvent>
@@ -25,7 +45,8 @@ public actor EventSubClient {
     private var pathMonitorTask: Task<Void, Never>?
     private var isNetworkAvailable = true   // optimistic until told otherwise
 
-    private var webSocketTask: URLSessionWebSocketTask?
+    private let socketFactory: @Sendable (URL) -> any EventSubWebSocket
+    private var webSocketTask: (any EventSubWebSocket)?
     private var sessionId: String?
     private var receiveTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     private var keepaliveTask: Task<Void, Never>?
@@ -42,17 +63,40 @@ public actor EventSubClient {
     private var seenMessageIdOrder: [String] = []
 
     private static let websocketURL = URL(string: "wss://eventsub.wss.twitch.tv/ws")!
+
+    /// Bound on the duplicate-suppression cache (`seenMessageIds`). The cache
+    /// deliberately SURVIVES reconnects — Twitch replays notifications across
+    /// them within its redelivery window — and is evicted FIFO at this size,
+    /// so it never grows unbounded on a long-lived connection. Only an
+    /// explicit `disconnect()` clears it.
     private static let maxSeenMessageIds = 4_096
 
+    /// Creates an EventSub WebSocket client.
+    ///
+    /// - Parameters:
+    ///   - api: Helix client used to create (and re-create) subscriptions.
+    ///   - isLive: Tunes the reconnect ladder. **A constant `{ false }` ladder
+    ///     GIVES UP**: after 5 failed attempts (~31s of cumulative backoff) the
+    ///     client emits `.disconnected` and parks — it will not retry again
+    ///     until the network path drops and returns (which resets the ladder)
+    ///     or `connect()` is called again. Supply a closure that returns `true`
+    ///     while the channel is live to get the persistent ladder that retries
+    ///     forever with a short, 5s-capped backoff.
+    ///   - pathMonitor: Network-path monitor driving path-aware reconnects.
+    ///   - socketFactory: Creates the WebSocket for a given URL. Defaults to
+    ///     `URLSession.shared.webSocketTask(with:)`; tests inject fakes here.
+    ///   - eventBufferingPolicy: Buffering policy for the ``events`` stream.
     public init(
         api: HelixClient,
         isLive: @escaping @Sendable () async -> Bool,
         pathMonitor: NetworkPathMonitoring = NWPathNetworkMonitor(),
+        socketFactory: @escaping @Sendable (URL) -> any EventSubWebSocket = { URLSession.shared.webSocketTask(with: $0) },
         eventBufferingPolicy: AsyncStream<EventSubEvent>.Continuation.BufferingPolicy = .bufferingNewest(1_000)
     ) {
         self.api = api
         self.isLive = isLive
         self.pathMonitor = pathMonitor
+        self.socketFactory = socketFactory
         (events, eventsContinuation) = AsyncStream.makeStream(
             of: EventSubEvent.self,
             bufferingPolicy: eventBufferingPolicy
@@ -79,9 +123,18 @@ public actor EventSubClient {
     /// Continuation used to make connect() wait for session_welcome before returning.
     private var welcomeContinuation: CheckedContinuation<Void, Error>?
 
+    /// Monotonic counter handing each welcome wait a unique identity token.
+    private var nextWelcomeWaitID: UInt64 = 0
+
+    /// Identity of the wait whose continuation is currently stored in
+    /// `welcomeContinuation`. A cancellation handler may only tear down its
+    /// OWN wait — a later attempt can supersede the stored continuation, and a
+    /// stale cancellation must not kill the newer attempt's wait.
+    private var welcomeWaitID: UInt64 = 0
+
     /// Test seam: replaces the socket-opening body of a connect() attempt
-    /// so the connect-coalescing logic can be exercised without a real
-    /// WebSocket (there is no socket seam in this client — see
+    /// so the connect-coalescing logic can be exercised without any socket
+    /// at all — it bypasses even the `socketFactory` seam (see
     /// EventSubConnectionStateTests). Always nil in production.
     private var connectBodyForTesting: (@Sendable () async throws -> Void)?
 
@@ -92,6 +145,29 @@ public actor EventSubClient {
 
     /// Internal, for tests only — true while a connect() attempt is in flight.
     var isConnectingForTesting: Bool { isConnecting }
+
+    /// Internal, for tests only — drives the private welcome-wait machinery
+    /// directly, since `connectBodyForTesting` replaces the whole socket-open
+    /// body and therefore never reaches it (see EventSubLifecycleTests).
+    func waitForWelcomeForTesting(timeout: Duration) async throws {
+        try await waitForWelcome(timeout: timeout)
+    }
+
+    /// Internal, for tests only — resumes the parked welcome wait the way the
+    /// session_welcome handler does (mechanics only; no session state is set).
+    func deliverWelcomeForTesting() {
+        welcomeContinuation?.resume()
+        welcomeContinuation = nil
+    }
+
+    /// Internal, for tests only — true while a welcome wait is parked.
+    var hasWelcomeWaiterForTesting: Bool { welcomeContinuation != nil }
+
+    /// Internal, for tests only — arms the keepalive watchdog the way a
+    /// session_welcome/session_keepalive message does.
+    func armKeepaliveForTesting() {
+        updateKeepaliveDeadline()
+    }
 
     /// The in-flight connect() attempt, if any. One shared client serves
     /// every consumer on an account (e.g. one chat session per open
@@ -155,9 +231,14 @@ public actor EventSubClient {
     private func startPathMonitorIfNeeded() {
         guard pathMonitorTask == nil else { return }
         pathMonitor.start()
-        pathMonitorTask = Task { [weak self] in
-            guard let self else { return }
-            for await status in self.pathMonitor.pathUpdates {
+        // Capture the (Sendable) monitor itself, not the client, to iterate
+        // the never-ending update stream: a single `guard let self` before
+        // the loop would pin the client alive while suspended on the stream,
+        // making deinit unreachable. Instead, self is re-acquired per update,
+        // so a strong reference exists only while one update is handled.
+        pathMonitorTask = Task { [weak self, pathMonitor] in
+            for await status in pathMonitor.pathUpdates {
+                guard let self else { return }
                 await self.handlePathStatus(status)
             }
         }
@@ -179,7 +260,7 @@ public actor EventSubClient {
                 reconnectAttempts = 0           // reset backoff — restore is "attempt 1"
                 reconnectTask?.cancel()
                 emit(.reconnecting)
-                reconnectTask = Task { await attemptReconnect() }
+                reconnectTask = makeReconnectTask()
             }
         }
     }
@@ -192,8 +273,8 @@ public actor EventSubClient {
         if sessionId != nil {
             return
         }
-        logger.info("🔌 EventSub: connecting to \(Self.websocketURL.absoluteString)")
-        let task = URLSession.shared.webSocketTask(with: url)
+        logger.info("🔌 EventSub: connecting to \(url.absoluteString)")
+        let task = socketFactory(url)
         webSocketTask = task
         task.resume()
         if resetReconnectAttempts {
@@ -303,33 +384,41 @@ public actor EventSubClient {
 
     // MARK: - Receive Loop
 
-    private func startReceiveLoop(for task: URLSessionWebSocketTask) {
+    private func startReceiveLoop(for task: any EventSubWebSocket) {
         logger.info("🔵 EventSub: starting receive loop")
-        let taskId = ObjectIdentifier(task)
+        // `as AnyObject` is redundant at runtime (the protocol is
+        // class-constrained) but keeps ObjectIdentifier's AnyObject
+        // initializer resolving against the existential on older compilers.
+        let taskId = ObjectIdentifier(task as AnyObject)
         receiveTasks[taskId]?.cancel()
         receiveTasks[taskId] = Task { [weak self, weak task] in
-            guard let self, let task else { return }
+            // Re-acquire self per message: receive() can suspend for the whole
+            // life of the socket, and holding the client across that await
+            // would keep it alive forever (deinit unreachable). The strong
+            // reference exists only while one message is dispatched.
             while !Task.isCancelled {
+                guard let task else { return }
                 do {
                     let message = try await task.receive()
+                    guard let self else { return }
                     await self.handleMessage(message, from: task)
                 } catch {
                     logger.error("❌ EventSub: receive error: \(error.localizedDescription)")
-                    await self.receiveLoopDidEnd(for: task, error: error)
+                    await self?.receiveLoopDidEnd(for: task, error: error)
                     return
                 }
             }
         }
     }
 
-    private func receiveLoopDidEnd(for task: URLSessionWebSocketTask, error: Error) {
-        receiveTasks.removeValue(forKey: ObjectIdentifier(task))
+    private func receiveLoopDidEnd(for task: any EventSubWebSocket, error: Error) {
+        receiveTasks.removeValue(forKey: ObjectIdentifier(task as AnyObject))
         guard !Task.isCancelled else { return }
         guard webSocketTask === task else { return }
         handleDisconnect()
     }
 
-    private func handleMessage(_ message: URLSessionWebSocketTask.Message, from task: URLSessionWebSocketTask) {
+    private func handleMessage(_ message: URLSessionWebSocketTask.Message, from task: any EventSubWebSocket) {
         guard case .string(let text) = message,
               let data = text.data(using: .utf8) else {
             logger.warning("⚠️ EventSub: received non-string message")
@@ -398,36 +487,72 @@ public actor EventSubClient {
         keepaliveDeadline = ContinuousClock().now.advanced(by: .seconds(keepaliveTimeout + 5))
         guard keepaliveTask == nil else { return }
 
+        // The watchdog loop lives in the Task closure — not in an
+        // actor-isolated method — so the client is re-acquired per step and
+        // never held across the sleep. (A `guard let self` wrapping the whole
+        // loop would pin the client alive for the watchdog's entire life,
+        // making deinit unreachable.) Each decision is computed on the actor
+        // via optional chaining, so no strong binding outlives that one call.
         keepaliveTask = Task { [weak self] in
-            guard let self else { return }
-            await self.runKeepaliveWatchdog()
+            while !Task.isCancelled {
+                guard let step = await self?.keepaliveWatchdogStep() else { return }
+                switch step {
+                case .sleep(let deadline):
+                    try? await ContinuousClock().sleep(until: deadline)
+                case .expired:
+                    await self?.keepaliveDidExpire()
+                    return
+                case .idle:
+                    await self?.clearExitedKeepaliveTask()
+                    return
+                }
+            }
         }
     }
 
-    private func runKeepaliveWatchdog() async {
-        while !Task.isCancelled {
-            guard let deadline = keepaliveDeadline else {
-                keepaliveTask = nil
-                return
-            }
+    /// One decision of the keepalive watchdog. `.sleep` when the deadline is
+    /// still ahead (keepalive/notification messages keep pushing it forward),
+    /// `.expired` when it has passed, `.idle` when there is no deadline at all
+    /// (the connection was torn down, so the watchdog should exit).
+    private enum KeepaliveStep: Sendable {
+        case sleep(until: ContinuousClock.Instant)
+        case expired
+        case idle
+    }
 
-            let now = ContinuousClock().now
-            if now < deadline {
-                try? await ContinuousClock().sleep(until: deadline)
-                continue
-            }
-
-            keepaliveTask = nil
-            handleDisconnect()
-            return
+    /// Computed on the actor so the watchdog Task reads a consistent deadline.
+    private func keepaliveWatchdogStep() -> KeepaliveStep {
+        guard let deadline = keepaliveDeadline else { return .idle }
+        if ContinuousClock().now < deadline {
+            return .sleep(until: deadline)
         }
+        return .expired
+    }
+
+    /// The keepalive deadline passed without a message — treat the socket as
+    /// dead. Runs on the actor from the watchdog Task; the cancellation guard
+    /// closes the hop between step computation and this call: disconnect()
+    /// may have cancelled this watchdog (and possibly armed a fresh one) in
+    /// between, and a stale watchdog must not nil the new task or tear down
+    /// the new connection.
+    private func keepaliveDidExpire() {
+        guard !Task.isCancelled else { return }
+        keepaliveTask = nil
+        handleDisconnect()
+    }
+
+    /// The watchdog observed a nil deadline and is exiting — drop our
+    /// reference to it. Same stale-watchdog guard as `keepaliveDidExpire()`.
+    private func clearExitedKeepaliveTask() {
+        guard !Task.isCancelled else { return }
+        keepaliveTask = nil
     }
 
     // MARK: - Reconnection
 
-    private func reconnectTo(_ url: URL, replacing oldTask: URLSessionWebSocketTask) async {
+    private func reconnectTo(_ url: URL, replacing oldTask: any EventSubWebSocket) async {
         guard shouldReconnect, webSocketTask === oldTask else { return }
-        let newTask = URLSession.shared.webSocketTask(with: url)
+        let newTask = socketFactory(url)
         webSocketTask = newTask
         newTask.resume()
         startReceiveLoop(for: newTask)
@@ -456,7 +581,11 @@ public actor EventSubClient {
         webSocketTask = nil
         sessionId = nil
         activeSubscriptionsById.removeAll()
-        clearSeenMessageIds()
+        // Deliberately NOT clearing seenMessageIds: Twitch replays
+        // notifications across reconnects within its redelivery window, and
+        // wiping the cache here would let every replay through as a duplicate
+        // event. The cache is bounded (4,096 ids), so surviving reconnects
+        // costs nothing; only an explicit disconnect() tears it down.
 
         // If connect() is still waiting for session_welcome, fail it
         welcomeContinuation?.resume(throwing: HelixError.networkError("WebSocket disconnected before session_welcome"))
@@ -466,15 +595,36 @@ public actor EventSubClient {
         if isNetworkAvailable {
             emit(.reconnecting)
             reconnectTask?.cancel()
-            reconnectTask = Task { await attemptReconnect() }
+            reconnectTask = makeReconnectTask()
         } else {
             emit(.waitingForNetwork)   // parked; handlePathStatus(.satisfied) will resume
         }
     }
 
-    private func attemptReconnect() async {
-        guard shouldReconnect else { return }
-        guard isNetworkAvailable else { emit(.waitingForNetwork); return }  // park
+    /// The reconnect ladder as a loop living in the Task closure — not in an
+    /// actor-isolated method — for the same two reasons as the keepalive
+    /// watchdog: a `Task { await attemptReconnect() }` would pin the client
+    /// alive for the entire ladder (backoff sleeps included), making deinit
+    /// unreachable while a reconnect is pending; and recursing on failure
+    /// (the previous shape) grew an async frame per attempt, unbounded for
+    /// live channels, which retry forever. Self is re-acquired per step and
+    /// never held across the backoff sleep.
+    private func makeReconnectTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            while !Task.isCancelled {
+                guard let delay = await self?.nextReconnectDelay() else { return }
+                try? await Task.sleep(for: delay)
+                guard let finished = await self?.performReconnectAttempt() else { return }
+                if finished { return }
+            }
+        }
+    }
+
+    /// Evaluates the reconnect gates and backoff ladder for the next attempt.
+    /// Returns the delay to sleep before attempting, or `nil` to park/stop.
+    private func nextReconnectDelay() async -> Duration? {
+        guard shouldReconnect else { return nil }
+        guard isNetworkAvailable else { emit(.waitingForNetwork); return nil }  // park
 
         let live = await isLive()
         reconnectAttempts += 1
@@ -484,24 +634,90 @@ public actor EventSubClient {
             isLive: live,
             attempt: reconnectAttempts
         )
-        guard case .attempt(let delay) = decision.action else { return }
+        switch decision.action {
+        case .attempt(let delay):
+            return delay
+        case .park(.attemptsExhausted):
+            // Terminal-state contract: the ladder is giving up, so the
+            // connectionState stream must not end on a stale `.reconnecting`
+            // — consumers drive "Reconnecting…" UI off that value and would
+            // show it forever. `.disconnected` is honest: nothing further
+            // happens without outside help (a network drop-and-restore resets
+            // the ladder via handlePathStatus, or the caller reconnects).
+            emit(.disconnected)
+            return nil
+        case .park:
+            // stopRequested / networkUnavailable are handled by the guards
+            // above before the decision is computed; if one slips through,
+            // parking silently matches those guards' behavior.
+            return nil
+        }
+    }
 
-        try? await Task.sleep(for: delay)
-        guard shouldReconnect, !Task.isCancelled else { return }
+    /// One post-backoff connection attempt. Returns `true` when the ladder
+    /// should stop looping — either the connection (and resubscribe) succeeded
+    /// or the client no longer wants to reconnect — and `false` to retry.
+    private func performReconnectAttempt() async -> Bool {
+        guard shouldReconnect, !Task.isCancelled else { return true }
 
         do {
             try await openConnection(to: Self.websocketURL, resetReconnectAttempts: false, timeout: .seconds(15))
             try await resubscribeAll()
+            return true
         } catch {
-            await attemptReconnect()
+            return false
         }
     }
 
     private func waitForWelcome() async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            welcomeContinuation?.resume(throwing: HelixError.networkError("Superseded EventSub connection attempt"))
-            welcomeContinuation = continuation
+        // Cancellation-aware: connect()'s timeout works by cancelling this
+        // wait via the task group, and the group must then AWAIT the cancelled
+        // child — a continuation that ignores cancellation would block the
+        // group until a socket error or late welcome arrived (potentially
+        // minutes past the deadline).
+        nextWelcomeWaitID &+= 1
+        let waitID = nextWelcomeWaitID
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                // Already cancelled? Then onCancel has ALREADY run — it fires
+                // immediately for an already-cancelled task, before this body
+                // — and found nothing to resume (our id wasn't stored yet), so
+                // parking here would hang forever. Resume right away, and
+                // crucially WITHOUT superseding a newer attempt's parked wait:
+                // a dead wait has no business tearing down a live one.
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                welcomeContinuation?.resume(throwing: HelixError.networkError("Superseded EventSub connection attempt"))
+                welcomeContinuation = continuation
+                welcomeWaitID = waitID
+                // Cancellation landing after the check above is covered by
+                // onCancel: its hop onto the actor can only run once this
+                // synchronous body has finished, i.e. with our continuation
+                // stored under our id. Re-check anyway as belt-and-braces —
+                // cancelWelcomeWait's guards make a second call a no-op, so
+                // double-resume is impossible.
+                if Task.isCancelled {
+                    cancelWelcomeWait(id: waitID)
+                }
+            }
+        } onCancel: {
+            // Nonisolated — hop to the actor. If this wait already resumed
+            // (welcome arrived, disconnect, or a superseding attempt), the
+            // identity + presence guards in cancelWelcomeWait make it a no-op.
+            Task { await self.cancelWelcomeWait(id: waitID) }
         }
+    }
+
+    /// Resumes the parked welcome wait with `CancellationError`, but only if
+    /// it is still the wait identified by `id` and still parked. Every other
+    /// resume site nils `welcomeContinuation` after resuming, so a late or
+    /// stale cancellation falls through both guards harmlessly.
+    private func cancelWelcomeWait(id: UInt64) {
+        guard id == welcomeWaitID, let continuation = welcomeContinuation else { return }
+        welcomeContinuation = nil
+        continuation.resume(throwing: CancellationError())
     }
 
     private func waitForWelcome(timeout: Duration) async throws {
@@ -516,7 +732,7 @@ public actor EventSubClient {
         }
     }
 
-    private func cleanupFailedConnection(task: URLSessionWebSocketTask, error: Error) {
+    private func cleanupFailedConnection(task: any EventSubWebSocket, error: Error) {
         cancelReceiveTasks()
         keepaliveTask?.cancel()
         keepaliveTask = nil
@@ -526,11 +742,15 @@ public actor EventSubClient {
             webSocketTask = nil
         }
         sessionId = nil
-        clearSeenMessageIds()
+        // seenMessageIds survives here for the same reason as in
+        // handleDisconnect(): a failed attempt is usually followed by a
+        // reconnect, and Twitch may replay notifications across it.
         welcomeContinuation?.resume(throwing: error)
         welcomeContinuation = nil
     }
 
+    /// Records a message id in the dedup cache, returning `false` for
+    /// duplicates. The cache spans reconnects (see `maxSeenMessageIds`).
     private func rememberMessageId(_ messageId: String) -> Bool {
         let insertResult = seenMessageIds.insert(messageId)
         guard insertResult.inserted else {
@@ -553,16 +773,39 @@ public actor EventSubClient {
         seenMessageIdOrder.removeAll(keepingCapacity: true)
     }
 
+    /// Re-creates every desired subscription on the current (fresh) session.
+    /// Only called from `performReconnectAttempt()`, after `openConnection`
+    /// has succeeded — so `sessionId` is set and `activeSubscriptionsById`
+    /// holds only subscriptions created on THIS session (`handleDisconnect()`
+    /// cleared everything belonging to the dead one).
     private func resubscribeAll() async throws {
-        activeSubscriptionsById.removeAll()
-        for subscription in desiredSubscriptions {
-            let record = try await createSubscription(subscription)
-            desiredSubscriptionsById[record.id] = subscription
+        // Skip anything already active: `createSubscription` records each
+        // success immediately, so entries present here were created on the
+        // current session by an earlier pass of this loop. Wiping the map and
+        // re-creating everything (the previous shape) meant a mid-loop failure
+        // retried already-created subscriptions next round — Twitch answers
+        // those duplicates with 409s, wedging the ladder forever.
+        for subscription in desiredSubscriptions where !activeSubscriptionsById.values.contains(subscription) {
+            do {
+                let record = try await createSubscription(subscription)
+                // Record ids are per-creation: drop the dead session's id(s)
+                // for this subscription before inserting the fresh one, or the
+                // map accumulates stale ids across every reconnect.
+                desiredSubscriptionsById = desiredSubscriptionsById.filter { $0.value != subscription }
+                desiredSubscriptionsById[record.id] = subscription
+            } catch HelixError.conflict {
+                // 409 conflict: the subscription already exists on this
+                // session (e.g. a previous pass created it but we lost the
+                // response). It is live server-side; we just never learned its
+                // record id, so there is nothing to store — treat it as
+                // already-subscribed rather than failing the whole round.
+                logger.warning("⚠️ EventSub: \(subscription.type) already subscribed on this session (409) — continuing")
+            }
         }
     }
 
-    private func cancelReceiveTask(for task: URLSessionWebSocketTask) {
-        receiveTasks.removeValue(forKey: ObjectIdentifier(task))?.cancel()
+    private func cancelReceiveTask(for task: any EventSubWebSocket) {
+        receiveTasks.removeValue(forKey: ObjectIdentifier(task as AnyObject))?.cancel()
     }
 
     private func cancelReceiveTasks() {

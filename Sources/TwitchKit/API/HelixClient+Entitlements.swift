@@ -23,11 +23,46 @@ extension HelixClient {
         return response.page
     }
 
+    /// Returns an async sequence of Drops entitlements for an organization/game/user filter.
+    ///
+    /// - Parameters:
+    ///   - ids: Optional entitlement IDs. Twitch currently allows up to 100.
+    ///   - userID: Optional user ID filter.
+    ///   - gameID: Optional game ID filter.
+    ///   - fulfillmentStatus: Optional fulfillment status filter.
+    ///   - pageSize: Optional page size. Twitch currently allows up to 100.
+    /// - Returns: A lazy async sequence that requests the next page as needed.
+    /// - SeeAlso: [Get Drops Entitlements](https://dev.twitch.tv/docs/api/reference/#get-drops-entitlements)
+    public func dropsEntitlements(
+        ids: [String] = [],
+        userID: String? = nil,
+        gameID: String? = nil,
+        fulfillmentStatus: DropsEntitlementFulfillmentStatus? = nil,
+        pageSize: Int? = nil
+    ) -> HelixPagedSequence<DropsEntitlement> {
+        HelixPagedSequence { cursor in
+            try await fetchDropsEntitlementsPage(
+                ids: ids,
+                userID: userID,
+                gameID: gameID,
+                fulfillmentStatus: fulfillmentStatus,
+                first: pageSize,
+                after: cursor
+            )
+        }
+    }
+
     /// Updates Drops entitlement fulfillment status.
     public func updateDropsEntitlements(
         entitlementIDs: [String],
         fulfillmentStatus: DropsEntitlementFulfillmentStatus
     ) async throws -> [DropsEntitlementUpdateResult] {
+        guard entitlementIDs.count <= 100 else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Twitch allows up to 100 entitlement IDs")
+            )
+        }
+
         let response: HelixResponse<DropsEntitlementUpdateResult> = try await request(
             endpoint: "entitlements/drops",
             method: "PATCH",

@@ -203,6 +203,9 @@ public struct HelixClient: Sendable {
             if Task.isCancelled {
                 throw CancellationError()
             }
+            if let urlError = error as? URLError {
+                throw HelixError.transport(urlError)
+            }
             throw HelixError.networkError(error.localizedDescription)
         }
     }

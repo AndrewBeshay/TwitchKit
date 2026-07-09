@@ -40,12 +40,21 @@ extension HelixClient {
         return marker
     }
 
+    /// Gets one page of stream markers.
+    ///
+    /// Exactly one of `userID` or `videoID` must be specified.
     public func fetchStreamMarkersPage(
         userID: String? = nil,
         videoID: String? = nil,
         first: Int? = nil,
         after cursor: String? = nil
     ) async throws -> HelixPage<StreamMarkersByVideo> {
+        guard (userID != nil) != (videoID != nil) else {
+            throw HelixError.badRequest(
+                TwitchAPIError.fallback(status: 400, message: "Exactly one of user ID or video ID must be specified")
+            )
+        }
+
         var queryItems: [URLQueryItem] = []
         HelixQuery.append(HelixQuery.item("user_id", userID), to: &queryItems)
         HelixQuery.append(HelixQuery.item("video_id", videoID), to: &queryItems)

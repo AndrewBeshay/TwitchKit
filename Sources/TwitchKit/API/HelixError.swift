@@ -24,6 +24,11 @@ public enum HelixError: Error, Sendable, LocalizedError {
     case decodingFailed(String)
     case networkError(String)
 
+    /// A transport-level failure surfaced by URLSession, preserving the underlying
+    /// `URLError` so callers can distinguish failures (offline, timeout, TLS, …)
+    /// via `error.code`.
+    case transport(URLError)
+
     public var errorDescription: String? {
         switch self {
         case .unauthorized: "Unauthorized — token invalid or expired"
@@ -45,6 +50,7 @@ public enum HelixError: Error, Sendable, LocalizedError {
         case .invalidResponse: "Invalid HTTP response"
         case .decodingFailed(let msg): "JSON decode failed: \(msg)"
         case .networkError(let msg): "Network error: \(msg)"
+        case .transport(let error): "Network error: \(error.localizedDescription) (URLError code \(error.code.rawValue))"
         }
     }
 }

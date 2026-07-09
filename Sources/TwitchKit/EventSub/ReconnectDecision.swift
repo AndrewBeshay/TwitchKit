@@ -6,10 +6,22 @@ import Foundation
 /// ``EventSubClient`` so the gating + delay math can be unit-tested without
 /// sockets, sleeps, or the network.
 struct ReconnectDecision: Equatable {
+    /// Why the ladder is stopping. The caller's reaction differs per reason —
+    /// `attemptsExhausted` in particular is a terminal state that must be
+    /// surfaced on the `connectionState` stream (as `.disconnected`), not a
+    /// silent park that leaves a stale `.reconnecting` as the last word.
+    enum ParkReason: Equatable {
+        /// The client no longer intends to be connected (`disconnect()`).
+        case stopRequested
+        /// The network path is unsatisfied; path restoration resumes the ladder.
+        case networkUnavailable
+        /// The non-live ladder used up all its attempts — giving up.
+        case attemptsExhausted
+    }
+
     enum Action: Equatable {
-        /// Stop retrying for now — either we don't want to reconnect, the network
-        /// path is unsatisfied, or the non-live ladder has exhausted its attempts.
-        case park
+        /// Stop retrying for now, for the given reason.
+        case park(ParkReason)
         /// Sleep `delay`, then attempt a fresh connection.
         case attempt(delay: Duration)
     }
@@ -26,7 +38,7 @@ struct ReconnectDecision: Equatable {
 ///     5s-capped backoff; a non-live channel gives up after 5 attempts with a
 ///     longer, 30s-capped backoff.
 ///   - attempt: The 1-based attempt number being evaluated.
-/// - Returns: ``ReconnectDecision/Action/park`` to stop, or
+/// - Returns: ``ReconnectDecision/Action/park(_:)`` to stop (with the reason), or
 ///   ``ReconnectDecision/Action/attempt(delay:)`` with the backoff delay.
 func reconnectDecision(
     networkAvailable: Bool,
@@ -34,11 +46,11 @@ func reconnectDecision(
     isLive: Bool,
     attempt: Int
 ) -> ReconnectDecision {
-    guard shouldReconnect else { return ReconnectDecision(action: .park) }
-    guard networkAvailable else { return ReconnectDecision(action: .park) }
+    guard shouldReconnect else { return ReconnectDecision(action: .park(.stopRequested)) }
+    guard networkAvailable else { return ReconnectDecision(action: .park(.networkUnavailable)) }
 
     let maxAttempts = isLive ? Int.max : 5
-    guard attempt <= maxAttempts else { return ReconnectDecision(action: .park) }
+    guard attempt <= maxAttempts else { return ReconnectDecision(action: .park(.attemptsExhausted)) }
 
     let baseDelay: Double = isLive ? 0.5 : 1.0
     let maxDelay: Double = isLive ? 5.0 : 30.0

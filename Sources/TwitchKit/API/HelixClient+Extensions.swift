@@ -213,6 +213,43 @@ public struct ExtensionPubSubMessage: Encodable, Sendable, Equatable {
 public struct ExtensionLiveChannelsPage: Decodable, Sendable, Equatable {
     public let data: [ExtensionLiveChannel]
     public let pagination: Pagination?
+
+    /// Creates a page of live channels.
+    ///
+    /// - Parameters:
+    ///   - data: Live channels on this page.
+    ///   - pagination: Cursor pagination, when more pages are available.
+    public init(data: [ExtensionLiveChannel], pagination: Pagination? = nil) {
+        self.data = data
+        self.pagination = pagination
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+        case pagination
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let data = try container.decode([ExtensionLiveChannel].self, forKey: .data)
+
+        // Get Extension Live Channels deviates from the standard Helix envelope: `pagination`
+        // is a plain string cursor rather than a `{"cursor": ...}` object. Decode the string
+        // form first (an empty string means no further pages), and fall back to the object
+        // form in case Twitch ever aligns this endpoint with the rest of the API.
+        let pagination: Pagination?
+        if container.contains(.pagination) {
+            if let cursor = try? container.decode(String.self, forKey: .pagination) {
+                pagination = cursor.isEmpty ? nil : Pagination(cursor: cursor)
+            } else {
+                pagination = try container.decodeIfPresent(Pagination.self, forKey: .pagination)
+            }
+        } else {
+            pagination = nil
+        }
+
+        self.init(data: data, pagination: pagination)
+    }
 }
 
 public struct ExtensionLiveChannel: Decodable, Sendable, Equatable {

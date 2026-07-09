@@ -38,10 +38,83 @@ public struct EventSubWebhookVerifier: Sendable {
         return constantTimeEqual(authenticationCode, signatureBytes)
     }
 
+    /// Returns `true` when the EventSub webhook request signature matches the request body
+    /// **and** the message timestamp is fresh.
+    ///
+    /// A captured webhook request carries a signature that stays valid forever, so an attacker
+    /// can replay it long after Twitch sent it. Checking freshness alongside the signature
+    /// closes that gap; Twitch recommends rejecting messages older than 10 minutes, which is
+    /// the default `maxAge`. See ``isTimestampFresh(_:maxAge:now:)`` for the freshness rules.
+    public func isValid(
+        messageID: String,
+        timestamp: String,
+        body: Data,
+        signature: String,
+        maxAge: Duration = .seconds(600),
+        now: Date = .now
+    ) -> Bool {
+        Self.isValid(
+            messageID: messageID,
+            timestamp: timestamp,
+            body: body,
+            signature: signature,
+            secret: secret,
+            maxAge: maxAge,
+            now: now
+        )
+    }
+
+    /// Returns `true` when the EventSub webhook request signature matches the request body
+    /// **and** the message timestamp is fresh.
+    ///
+    /// A captured webhook request carries a signature that stays valid forever, so an attacker
+    /// can replay it long after Twitch sent it. Checking freshness alongside the signature
+    /// closes that gap; Twitch recommends rejecting messages older than 10 minutes, which is
+    /// the default `maxAge`. See ``isTimestampFresh(_:maxAge:now:)`` for the freshness rules.
+    public static func isValid(
+        messageID: String,
+        timestamp: String,
+        body: Data,
+        signature: String,
+        secret: String,
+        maxAge: Duration = .seconds(600),
+        now: Date = .now
+    ) -> Bool {
+        guard isTimestampFresh(timestamp, maxAge: maxAge, now: now) else { return false }
+        return isValid(messageID: messageID, timestamp: timestamp, body: body, signature: signature, secret: secret)
+    }
+
+    /// Returns `true` when a `Twitch-Eventsub-Message-Timestamp` header value is recent
+    /// enough to process.
+    ///
+    /// A valid signature alone does not stop replay attacks: a captured request verifies
+    /// forever. Twitch therefore recommends rejecting messages whose timestamp is older than
+    /// 10 minutes, which is the default `maxAge`. A timestamp is fresh when
+    /// `now - timestamp <= maxAge`. Unparseable timestamps are rejected. Timestamps up to
+    /// 5 minutes in the future are accepted to tolerate clock skew; anything further in the
+    /// future is rejected.
+    public static func isTimestampFresh(
+        _ timestamp: String,
+        maxAge: Duration = .seconds(600),
+        now: Date = .now
+    ) -> Bool {
+        guard let date = TwitchDateParser.date(from: timestamp) else { return false }
+
+        let age = now.timeIntervalSince(date)
+        guard age >= -allowedFutureSkew else { return false }
+
+        let maxAgeSeconds = Double(maxAge.components.seconds)
+            + Double(maxAge.components.attoseconds) / 1e18
+        return age <= maxAgeSeconds
+    }
+
     /// Extracts the challenge string from a webhook callback verification request body.
     public static func challenge(from body: Data) throws -> String? {
         try JSONDecoder.twitch().decode(EventSubWebhookVerification.self, from: body).challenge
     }
+
+    /// Forward clock skew, in seconds, tolerated by ``isTimestampFresh(_:maxAge:now:)``.
+    private static let allowedFutureSkew: TimeInterval = 300
 
     private static func signatureBytes(from signature: String) -> [UInt8]? {
         let prefix = Array("sha256=".utf8)

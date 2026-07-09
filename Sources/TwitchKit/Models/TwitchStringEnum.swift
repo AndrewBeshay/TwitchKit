@@ -223,6 +223,11 @@ public enum EventSubTransportMethod: Codable, RawRepresentable, Sendable, Equata
 }
 
 /// A channel points custom reward redemption status.
+///
+/// Helix requires and returns the uppercase forms (`UNFULFILLED`, `FULFILLED`,
+/// `CANCELED`), so `rawValue` emits uppercase. Decoding matches
+/// case-insensitively to also tolerate lowercase inputs such as EventSub's
+/// redemption payloads.
 public enum ChannelPointsRedemptionStatus: Codable, RawRepresentable, Sendable, Equatable {
     case unknown(String)
     case unfulfilled
@@ -232,17 +237,17 @@ public enum ChannelPointsRedemptionStatus: Codable, RawRepresentable, Sendable, 
     public var rawValue: String {
         switch self {
         case .unknown(let value): value
-        case .unfulfilled: "unfulfilled"
-        case .fulfilled: "fulfilled"
-        case .canceled: "canceled"
+        case .unfulfilled: "UNFULFILLED"
+        case .fulfilled: "FULFILLED"
+        case .canceled: "CANCELED"
         }
     }
 
     public init(rawValue: String) {
-        self = switch rawValue {
-        case "unfulfilled": .unfulfilled
-        case "fulfilled": .fulfilled
-        case "canceled": .canceled
+        self = switch rawValue.uppercased() {
+        case "UNFULFILLED": .unfulfilled
+        case "FULFILLED": .fulfilled
+        case "CANCELED": .canceled
         default: .unknown(rawValue)
         }
     }
