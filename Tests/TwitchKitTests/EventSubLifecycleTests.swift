@@ -15,11 +15,11 @@ import Foundation
 ///    ignored cancellation would block the group until a socket error or late
 ///    welcome arrived — potentially minutes past the deadline.
 ///
-/// There is no socket seam in `EventSubClient` (see
-/// EventSubConnectionStateTests), so these tests drive the private machinery
-/// through small internal test-only seams (`armKeepaliveForTesting`,
-/// `waitForWelcomeForTesting`, `deliverWelcomeForTesting`), following the
-/// precedent of `setConnectBodyForTesting`.
+/// These tests drive the private machinery directly through small internal
+/// test-only seams (`armKeepaliveForTesting`, `waitForWelcomeForTesting`,
+/// `deliverWelcomeForTesting`), following the precedent of
+/// `setConnectBodyForTesting` — deliberately below the `socketFactory` seam
+/// (see EventSubSocketTests), so each property is pinned in isolation.
 final class EventSubLifecycleTests: XCTestCase {
 
     // MARK: - Deinit reachability
